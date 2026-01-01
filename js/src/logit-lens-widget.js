@@ -1245,8 +1245,8 @@ var LogitLensWidget = (function() {
                     var pinnedStyle = pinnedColor ? "background: " + pinnedColor + "22; border-left-color: " + pinnedColor + ";" : "";
                     var visualizedToken = visualizeSpaces(item.token);
                     var tooltipToken = visualizeSpaces(item.token, true);  // Spell out entities for tooltip
-                    contentHtml += '<div class="topk-item' + (pinnedColor ? ' pinned' : '') + '" data-ki="' + ki + '" style="' + pinnedStyle + '">';
-                    contentHtml += '<span class="topk-token" title="' + escapeHtml(tooltipToken) + '">' + escapeHtml(visualizedToken) + '</span>';
+                    contentHtml += '<div class="topk-item' + (pinnedColor ? ' pinned' : '') + '" data-ki="' + ki + '" style="' + pinnedStyle + '" title="' + escapeHtml(tooltipToken) + '">';
+                    contentHtml += '<span class="topk-token">' + escapeHtml(visualizedToken) + '</span>';
                     contentHtml += '<span class="topk-prob">' + probPct + '%</span>';
                     contentHtml += '</div>';
                 });
