@@ -384,6 +384,80 @@ describe('Color Mode Menu', function() {
         var popup = document.querySelector('#container .popup');
         expect(popup.classList.contains('visible')).toBe(false);
     });
+
+    test('overlay should be created when menu opens', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Initially no overlay
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Overlay should exist
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+        expect(overlay.style.position).toBe('fixed');
+    });
+
+    test('clicking overlay should dismiss menu', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        var menu = document.querySelector('#container .color-menu');
+        expect(menu.classList.contains('visible')).toBe(true);
+
+        // Click on overlay (using mousedown since that's what triggers dismiss)
+        var overlay = document.querySelector('[id$="_overlay"]');
+        overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+        // Menu should be dismissed
+        expect(menu.classList.contains('visible')).toBe(false);
+    });
+
+    test('overlay should be removed when menu is dismissed', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Overlay exists
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+
+        // Click overlay to dismiss
+        overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+        // Overlay should be removed
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+    });
+
+    test('closing menu via button should also remove overlay', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Overlay exists
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+
+        // Click button again to close (toggle)
+        btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Overlay should be removed
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+    });
 });
 
 describe('Color Mode Button Visibility', function() {

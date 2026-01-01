@@ -145,3 +145,87 @@ describe('DOM Interaction Tests', function() {
         expect(cells.length).toBe(1 + testData.layers.length);
     });
 });
+
+describe('Popup Overlay Tests', function() {
+    beforeEach(function() {
+        document.body.innerHTML = '<div id="container"></div>';
+    });
+
+    afterEach(function() {
+        document.body.innerHTML = '';
+    });
+
+    test('overlay should be created when popup opens', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Initially no overlay
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+
+        // Open popup by clicking a cell
+        var cell = document.querySelector('.pred-cell');
+        cell.click();
+
+        // Overlay should exist
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+        expect(overlay.style.position).toBe('fixed');
+    });
+
+    test('clicking overlay should dismiss popup', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open popup
+        var cell = document.querySelector('.pred-cell');
+        cell.click();
+
+        var popup = document.querySelector('.popup');
+        expect(popup.classList.contains('visible')).toBe(true);
+
+        // Click on overlay
+        var overlay = document.querySelector('[id$="_overlay"]');
+        overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+        // Popup should be dismissed
+        expect(popup.classList.contains('visible')).toBe(false);
+    });
+
+    test('overlay should be removed when popup is dismissed', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open popup
+        var cell = document.querySelector('.pred-cell');
+        cell.click();
+
+        // Overlay exists
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+
+        // Click overlay to dismiss
+        overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+        // Overlay should be removed
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+    });
+
+    test('closing popup via close button should also remove overlay', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open popup
+        var cell = document.querySelector('.pred-cell');
+        cell.click();
+
+        // Overlay exists
+        var overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).not.toBeNull();
+
+        // Click close button
+        var closeBtn = document.querySelector('.popup-close');
+        closeBtn.click();
+
+        // Overlay should be removed
+        overlay = document.querySelector('[id$="_overlay"]');
+        expect(overlay).toBeNull();
+    });
+});
