@@ -1748,19 +1748,32 @@ var LogitLensWidget = (function() {
             }
 
             // Global event listeners
-            document.addEventListener("click", function(e) {
+            // Use mousedown in capture phase to dismiss popups before other handlers fire
+            document.addEventListener("mousedown", function(e) {
                 // Check if widget still exists (may have been removed)
                 var container = document.getElementById(uid);
                 if (!container) return;
 
-                if (!e.target.closest("#" + uid + " .popup") && !e.target.closest("#" + uid + " .pred-cell")) {
-                    closePopup();
-                }
+                var popupVisible = document.querySelector("#" + uid + " .popup.visible");
                 var colorMenu = document.getElementById(uid + "_color_menu");
-                if (colorMenu && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
-                    colorMenu.classList.remove("visible");
+                var colorMenuVisible = colorMenu && colorMenu.classList.contains("visible");
+
+                // If popup is visible and click is outside popup and close button
+                if (popupVisible && !e.target.closest("#" + uid + " .popup") && !e.target.closest("#" + uid + " .pred-cell")) {
+                    closePopup();
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return;
                 }
-            });
+
+                // If color menu is visible and click is outside menu and button
+                if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
+                    colorMenu.classList.remove("visible");
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return;
+                }
+            }, true); // capture phase
 
             document.getElementById(uid).addEventListener("mousedown", function(e) {
                 if (e.shiftKey) e.preventDefault();
