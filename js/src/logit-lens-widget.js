@@ -1226,7 +1226,7 @@ var LogitLensWidget = (function() {
                 removeOverlay(); // Remove any existing overlay first
                 var overlay = document.createElement("div");
                 overlay.id = uid + "_overlay";
-                overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:998;";
+                overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:50;";
                 overlay.addEventListener("mousedown", function(e) {
                     e.stopPropagation();
                     e.preventDefault();
