@@ -1106,7 +1106,8 @@ var LogitLensWidget = (function() {
                             buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
                             return;
                         }
-                        if (openPopupCell === cell) { closePopup(); return; }
+                        // If popup is open, first click just dismisses it (even on different cell)
+                        if (openPopupCell) { closePopup(); return; }
                         document.querySelectorAll("#" + uid + " .pred-cell.selected").forEach(function(c) { c.classList.remove("selected"); });
                         cell.classList.add("selected");
                         showPopup(cell, pos, li, cellData);
