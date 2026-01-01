@@ -550,11 +550,15 @@ var LogitLensWidget = (function() {
                         }
                         var pinnedStyle = pinnedColor ? "box-shadow: inset 0 0 0 2px " + pinnedColor + ";" : "";
 
+                        // Bold the last token in the last layer (main model prediction)
+                        var isMainPrediction = (rowIdx === visiblePositions.length - 1) && (colIdx === visibleLayerIndices.length - 1);
+                        var boldStyle = isMainPrediction ? "font-weight: bold;" : "";
+
                         var hasHandle = isFirstVisibleRow && colIdx < halfwayCol;
 
                         html += '<td class="pred-cell' + (pinnedColor ? ' pinned' : '') + '" ' +
                             'data-pos="' + pos + '" data-li="' + li + '" data-col="' + colIdx + '" ' +
-                            'style="background:' + color + '; color:' + textColor + '; width:' + cellWidth + 'px; max-width:' + cellWidth + 'px; ' + pinnedStyle + '">' +
+                            'style="background:' + color + '; color:' + textColor + '; width:' + cellWidth + 'px; max-width:' + cellWidth + 'px; ' + pinnedStyle + boldStyle + '">' +
                             escapeHtml(cellData.token);
                         if (hasHandle) {
                             html += '<div class="resize-handle" data-col="' + colIdx + '"></div>';
