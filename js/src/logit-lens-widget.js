@@ -738,7 +738,7 @@ var LogitLensWidget = (function() {
                     var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
                     html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
                     html += '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
-                    html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '">';
+                    html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '" style="border:0;background:transparent;padding:0;">';
                     html += '</div>';
                 });
 
