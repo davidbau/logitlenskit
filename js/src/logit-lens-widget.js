@@ -363,7 +363,31 @@ var LogitLensWidget = (function() {
                 return false;
             }
 
-            function visualizeSpaces(text) {
+            // Map of invisible/special characters to their entity names
+            var invisibleEntityMap = {
+                '\u02FD': '&#x02FD;',    // Modifier letter shelf (our space visualization)
+                ' ': '&nbsp;',           // Regular space
+                '\u00A0': '&nbsp;',      // Non-breaking space
+                '\u00AD': '&shy;',       // Soft hyphen
+                '\u200B': '&#8203;',     // Zero-width space
+                '\u200C': '&zwnj;',      // Zero-width non-joiner
+                '\u200D': '&zwj;',       // Zero-width joiner
+                '\uFEFF': '&#65279;',    // Zero-width no-break space (BOM)
+                '\u2060': '&#8288;',     // Word joiner
+                '\u2002': '&ensp;',      // En space
+                '\u2003': '&emsp;',      // Em space
+                '\u2009': '&thinsp;',    // Thin space
+                '\u200A': '&#8202;',     // Hair space
+                '\u2006': '&#8198;',     // Six-per-em space
+                '\u2008': '&#8200;',     // Punctuation space
+                '\u200E': '&lrm;',       // Left-to-right mark
+                '\u200F': '&rlm;',       // Right-to-left mark
+                '\t': '&#9;',            // Tab
+                '\n': '&#10;',           // Newline
+                '\r': '&#13;'            // Carriage return
+            };
+
+            function visualizeSpaces(text, spellOutEntities) {
                 var result = text;
                 var leadingSpaces = 0;
                 while (leadingSpaces < result.length && result[leadingSpaces] === ' ') leadingSpaces++;
@@ -375,6 +399,21 @@ var LogitLensWidget = (function() {
                 if (trailingSpaces > 0) {
                     result = result.slice(0, result.length - trailingSpaces) + '\u02FD'.repeat(trailingSpaces);
                 }
+
+                // If spellOutEntities is true, convert invisible chars to entity names
+                if (spellOutEntities) {
+                    var output = '';
+                    for (var i = 0; i < result.length; i++) {
+                        var ch = result[i];
+                        if (invisibleEntityMap[ch]) {
+                            output += invisibleEntityMap[ch];
+                        } else {
+                            output += ch;
+                        }
+                    }
+                    return output;
+                }
+
                 return result;
             }
 
@@ -1204,8 +1243,9 @@ var LogitLensWidget = (function() {
                     var pinnedColor = getColorForToken(item.token);
                     var pinnedStyle = pinnedColor ? "background: " + pinnedColor + "22; border-left-color: " + pinnedColor + ";" : "";
                     var visualizedToken = visualizeSpaces(item.token);
+                    var tooltipToken = visualizeSpaces(item.token, true);  // Spell out entities for tooltip
                     contentHtml += '<div class="topk-item' + (pinnedColor ? ' pinned' : '') + '" data-ki="' + ki + '" style="' + pinnedStyle + '">';
-                    contentHtml += '<span class="topk-token" title="' + escapeHtml(visualizedToken) + '">' + escapeHtml(visualizedToken) + '</span>';
+                    contentHtml += '<span class="topk-token" title="' + escapeHtml(tooltipToken) + '">' + escapeHtml(visualizedToken) + '</span>';
                     contentHtml += '<span class="topk-prob">' + probPct + '%</span>';
                     contentHtml += '</div>';
                 });
