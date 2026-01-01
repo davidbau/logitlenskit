@@ -1603,7 +1603,7 @@ var LogitLensWidget = (function() {
                         label.setAttribute("y", chartInnerHeight + 12);
                         label.setAttribute("text-anchor", "middle");
                         label.setAttribute("font-size", "9");
-                        label.setAttribute("fill", "#666");
+                        label.setAttribute("fill", darkMode ? "#aaa" : "#666");
                         label.textContent = widgetData.layers[layerIdx];
                         tickGroup.appendChild(label);
 
@@ -1742,7 +1742,7 @@ var LogitLensWidget = (function() {
                     tickLabel.setAttribute("x", -5); tickLabel.setAttribute("y", tickY + 3);
                     tickLabel.setAttribute("text-anchor", "end");
                     tickLabel.setAttribute("font-size", "8");
-                    tickLabel.setAttribute("fill", "#666");
+                    tickLabel.setAttribute("fill", darkMode ? "#aaa" : "#666");
                     tickLabel.textContent = formatPct(maxProb);
                     g.appendChild(tickLabel);
                 }
@@ -1843,7 +1843,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "25"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "9"); text.setAttribute("fill", "#333");
+                        text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = visualizeSpaces(rowToken);
                         legendItem.appendChild(text);
@@ -1900,7 +1900,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "9"); text.setAttribute("fill", "#333");
+                        text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = groupLabel;
                         legendItem.appendChild(text);
@@ -1949,7 +1949,7 @@ var LogitLensWidget = (function() {
 
                     var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                    text.setAttribute("font-size", "9"); text.setAttribute("fill", "#666");
+                    text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#aaa" : "#666");
                     text.setAttribute("clip-path", "url(#" + clipId + ")");
                     text.textContent = visualizeSpaces(hoverLabel);
                     legendItem.appendChild(text);
