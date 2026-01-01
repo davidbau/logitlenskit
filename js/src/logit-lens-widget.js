@@ -70,8 +70,8 @@ var LogitLensWidget = (function() {
                 padding: 4px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer;
                 display: flex; justify-content: space-between; font-size: 11px;
             }
-            #${uid} .topk-item:hover { background: #e3f2fd; }
-            #${uid} .topk-item.active { background: #bbdefb; }
+            #${uid} .topk-item:hover { background: #f0f0f0; }
+            #${uid} .topk-item.active { background: #f0f0f0; }
             #${uid} .topk-token { font-family: monospace; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             #${uid} .topk-prob { color: #666; margin-left: 8px; }
             #${uid} .topk-item.pinned { border-left: 3px solid currentColor; }
