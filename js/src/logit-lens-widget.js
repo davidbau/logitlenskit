@@ -1956,6 +1956,8 @@ var LogitLensWidget = (function() {
 
             // Click handler to reset justDismissedColorMenu flag and prevent popup
             document.addEventListener("click", function(e) {
+                // Check if widget still exists (may have been removed)
+                if (!document.getElementById(uid)) return;
                 if (justDismissedColorMenu) {
                     justDismissedColorMenu = false;
                     e.stopPropagation();
