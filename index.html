@@ -5,6 +5,7 @@
     <title>LogitLensKit - Interactive Logit Lens Visualization</title>
     <meta name="description" content="Interactive visualization toolkit for transformer logit lens analysis">
     <script src="preview_data.js"></script>
+    <script src="preview_data_gptj.js"></script>
     <script src="js/src/logit-lens-widget.js"></script>
     <style>
         body {
@@ -36,7 +37,17 @@
         <a href="https://github.com/davidbau/logitlenskit/blob/main/docs/JAVASCRIPT_API.md">JavaScript API</a>
         <a href="https://github.com/davidbau/logitlenskit/blob/main/docs/PYTHON_API.md">Python API</a>
     </div>
-    <p class="note">Demo using real Llama 3.1 70B data collected via NDIF. Click cells to see top-k predictions, click input tokens to pin rows for comparison.</p>
+    <p class="note">Demo using real model data collected via NDIF. Click cells to see top-k predictions, click input tokens to pin rows for comparison.</p>
+    <p style="margin-bottom: 15px;">
+        <strong>Model:</strong>
+        <button id="load-llama-btn" style="padding: 6px 12px; font-size: 13px; cursor: pointer; margin-left: 10px;">
+            Llama 3.1 70B (80 layers)
+        </button>
+        <button id="load-gptj-btn" style="padding: 6px 12px; font-size: 13px; cursor: pointer; margin-left: 5px;">
+            GPT-J 6B (28 layers)
+        </button>
+        <span id="current-model" style="margin-left: 10px; font-size: 12px; color: #666;">Currently: Llama 3.1 70B</span>
+    </p>
     <div class="preview-container" id="viz"></div>
     <p style="margin-top: 20px;">
         <button id="duplicate-btn" style="padding: 8px 16px; font-size: 14px; cursor: pointer;">
@@ -53,16 +64,66 @@
     <div class="preview-container" id="viz2" style="margin-top: 20px;"></div>
 
 <script>
-// Use real data from NDIF via JSONP (preview_data.js)
-const data = (typeof PREVIEW_DATA !== 'undefined') ? PREVIEW_DATA : {
+// Model data from NDIF
+var dataLlama = (typeof PREVIEW_DATA !== 'undefined') ? PREVIEW_DATA : null;
+var dataGptj = (typeof PREVIEW_DATA_GPTJ !== 'undefined') ? PREVIEW_DATA_GPTJ : null;
+
+// Fallback data if neither loads
+var fallbackData = {
     layers: [0, 1, 2, 3],
     tokens: ["Fallback", " data"],
     cells: [[{token:"test",prob:0.5,trajectory:[0.5,0.5,0.5,0.5],topk:[{token:"test",prob:0.5,trajectory:[0.5,0.5,0.5,0.5]}]}]]
 };
 
+// Current data and model name
+var currentData = dataLlama || dataGptj || fallbackData;
+var currentModel = dataLlama ? "Llama 3.1 70B" : (dataGptj ? "GPT-J 6B" : "Fallback");
+
 // Create widget instance
-var widget1 = LogitLensWidget("#viz", data);
+var widget1 = LogitLensWidget("#viz", currentData);
 var widget2 = null;
+
+// Helper to reload widget with new data
+function reloadWidget(data, modelName) {
+    currentData = data;
+    currentModel = modelName;
+
+    // Get current dark mode state
+    var isDarkMode = widget1 ? widget1.getDarkMode() : false;
+
+    // Destroy and recreate widget1
+    document.getElementById("viz").innerHTML = "";
+    widget1 = LogitLensWidget("#viz", data, { darkMode: isDarkMode });
+
+    // If widget2 exists, recreate it too
+    if (widget2) {
+        document.getElementById("viz2").innerHTML = "";
+        widget2 = LogitLensWidget("#viz2", data, { darkMode: isDarkMode });
+        if (document.getElementById("link-checkbox").checked) {
+            widget1.linkColumnsTo(widget2);
+        }
+    }
+
+    // Update label
+    document.getElementById("current-model").textContent = "Currently: " + modelName;
+}
+
+// Model switching buttons
+document.getElementById("load-llama-btn").addEventListener("click", function() {
+    if (dataLlama) {
+        reloadWidget(dataLlama, "Llama 3.1 70B");
+    } else {
+        alert("Llama data not available");
+    }
+});
+
+document.getElementById("load-gptj-btn").addEventListener("click", function() {
+    if (dataGptj) {
+        reloadWidget(dataGptj, "GPT-J 6B");
+    } else {
+        alert("GPT-J data not available");
+    }
+});
 
 // Duplicate button handler
 document.getElementById("duplicate-btn").addEventListener("click", function() {
@@ -71,7 +132,7 @@ document.getElementById("duplicate-btn").addEventListener("click", function() {
 
     // Clear viz2 and create new widget with same state
     document.getElementById("viz2").innerHTML = "";
-    widget2 = LogitLensWidget("#viz2", data, state);
+    widget2 = LogitLensWidget("#viz2", currentData, state);
 
     // Show the link checkbox
     document.getElementById("link-label").style.display = "inline";
