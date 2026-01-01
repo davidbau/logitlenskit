@@ -457,10 +457,29 @@ var LogitLensWidget = (function() {
                     var g = parseInt(hex.substr(2, 2), 16);
                     var b = parseInt(hex.substr(4, 2), 16);
                     var blend = prob;
-                    var rr = Math.round(255 - (255 - r) * blend);
-                    var gg = Math.round(255 - (255 - g) * blend);
-                    var bb = Math.round(255 - (255 - b) * blend);
-                    return "rgb(" + rr + "," + gg + "," + bb + ")";
+
+                    if (darkMode) {
+                        // Dark mode: blend from dark background (#1e1e1e = 30,30,30) to glowing color
+                        var darkBase = 30;
+                        var rr = Math.round(darkBase + (r - darkBase) * blend);
+                        var gg = Math.round(darkBase + (g - darkBase) * blend);
+                        var bb = Math.round(darkBase + (b - darkBase) * blend);
+                        return "rgb(" + rr + "," + gg + "," + bb + ")";
+                    } else {
+                        // Light mode: blend from white to color
+                        var rr = Math.round(255 - (255 - r) * blend);
+                        var gg = Math.round(255 - (255 - g) * blend);
+                        var bb = Math.round(255 - (255 - b) * blend);
+                        return "rgb(" + rr + "," + gg + "," + bb + ")";
+                    }
+                }
+                // Default gradient (no baseColor specified)
+                if (darkMode) {
+                    // Dark mode: glow from dark to blue
+                    var rVal = Math.round(30 + (100 - 30) * prob * 0.8);
+                    var gVal = Math.round(30 + (150 - 30) * prob * 0.6);
+                    var bVal = Math.round(30 + (255 - 30) * prob);
+                    return "rgb(" + rVal + "," + gVal + "," + bVal + ")";
                 }
                 var rVal = Math.round(255 * (1 - prob * 0.8));
                 var gVal = Math.round(255 * (1 - prob * 0.6));
@@ -621,8 +640,15 @@ var LogitLensWidget = (function() {
                             });
                         }
 
-                        var color = colorModes.length === 0 ? "#fff" : probToColor(cellProb, winningColor);
-                        var textColor = colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
+                        var color = colorModes.length === 0 ? (darkMode ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
+                        var textColor;
+                        if (darkMode) {
+                            // Dark mode: light text always (glowing colors on dark background)
+                            textColor = colorModes.length === 0 ? "#e0e0e0" : (cellProb < 0.7 ? "#e0e0e0" : "#fff");
+                        } else {
+                            // Light mode: dark text on light backgrounds, white text on saturated colors
+                            textColor = colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
+                        }
                         var pinnedColor = getColorForToken(cellData.token);
                         if (!pinnedColor) {
                             var winningGroup = getWinningGroupAtCell(pos, li);
@@ -2287,6 +2313,8 @@ var LogitLensWidget = (function() {
                 setDarkMode: function(enabled) {
                     darkMode = !!enabled;
                     applyDarkMode(darkMode);
+                    // Rebuild table to apply new heatmap colors
+                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
                 },
                 getDarkMode: function() {
                     return darkMode;
