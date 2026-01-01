@@ -1953,6 +1953,8 @@ var LogitLensWidget = (function() {
                 if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
                     colorMenu.classList.remove("visible");
                     justDismissedColorMenu = true; // Prevent click handler from opening popup
+                    // Reset flag after event cycle in case click lands outside cells
+                    setTimeout(function() { justDismissedColorMenu = false; }, 0);
                     e.stopPropagation();
                     e.preventDefault();
                     return;
