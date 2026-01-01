@@ -1644,13 +1644,18 @@ var LogitLensWidget = (function() {
             (function() {
                 var handle = document.getElementById(uid + "_resize_bottom");
                 var table = document.getElementById(uid + "_table");
-                var isDragging = false, startY = 0, startMaxRows = null;
+                var isDragging = false, startY = 0, startMaxRows = null, measuredRowHeight = 20;
 
                 handle.addEventListener("mousedown", function(e) {
                     closePopup();
                     isDragging = true;
                     startY = e.clientY;
                     startMaxRows = currentMaxRows;
+                    // Measure actual row height from DOM (use second row to skip header)
+                    var rows = table.querySelectorAll("tr");
+                    if (rows.length >= 2) {
+                        measuredRowHeight = rows[1].getBoundingClientRect().height;
+                    }
                     handle.classList.add("dragging");
                     e.preventDefault();
                     e.stopPropagation();
@@ -1659,8 +1664,7 @@ var LogitLensWidget = (function() {
                 document.addEventListener("mousemove", function(e) {
                     if (!isDragging) return;
                     var delta = e.clientY - startY;
-                    var rowHeight = 18;
-                    var rowDelta = Math.round(delta / rowHeight);
+                    var rowDelta = Math.round(delta / measuredRowHeight);
 
                     var totalTokens = widgetData.tokens.length;
                     var startRows = startMaxRows === null ? totalTokens : startMaxRows;
