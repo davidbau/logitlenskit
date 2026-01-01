@@ -170,7 +170,6 @@ var LogitLensWidget = (function() {
             // Clamp plotMinLayer to valid range: [0, nLayers - 2]
             plotMinLayer = Math.max(0, Math.min(nLayers - 2, plotMinLayer));
             var openPopupCell = null;
-            var justDismissedColorMenu = false; // Flag to prevent popup after menu dismiss
             var currentHoverPos = widgetData.tokens.length - 1;
             // colorModes is an array of active color modes; empty array means "none"
             // Backward compat: old state may have colorMode as string
@@ -1947,21 +1946,14 @@ var LogitLensWidget = (function() {
                 // If color menu is visible and click is outside menu and button
                 if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
                     colorMenu.classList.remove("visible");
-                    justDismissedColorMenu = true; // Prevent click handler from opening popup
+                    // Register ephemeral click handler to eat the click that follows this mousedown
+                    document.addEventListener("click", function eatClick(clickEvent) {
+                        clickEvent.stopPropagation();
+                        clickEvent.preventDefault();
+                    }, { capture: true, once: true });
                     e.stopPropagation();
                     e.preventDefault();
                     return;
-                }
-            }, true); // capture phase
-
-            // Click handler to reset justDismissedColorMenu flag and prevent popup
-            document.addEventListener("click", function(e) {
-                // Check if widget still exists (may have been removed)
-                if (!document.getElementById(uid)) return;
-                if (justDismissedColorMenu) {
-                    justDismissedColorMenu = false;
-                    e.stopPropagation();
-                    e.preventDefault();
                 }
             }, true); // capture phase
 
