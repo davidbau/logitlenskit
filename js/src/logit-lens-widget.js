@@ -170,6 +170,7 @@ var LogitLensWidget = (function() {
             // Clamp plotMinLayer to valid range: [0, nLayers - 2]
             plotMinLayer = Math.max(0, Math.min(nLayers - 2, plotMinLayer));
             var openPopupCell = null;
+            var justDismissedColorMenu = false; // Flag to prevent popup after menu dismiss
             var currentHoverPos = widgetData.tokens.length - 1;
             // colorModes is an array of active color modes; empty array means "none"
             // Backward compat: old state may have colorMode as string
@@ -1182,6 +1183,11 @@ var LogitLensWidget = (function() {
 
                     cell.addEventListener("click", function(e) {
                         e.stopPropagation();
+                        // If we just dismissed the color menu via mousedown, don't open popup
+                        if (justDismissedColorMenu) {
+                            justDismissedColorMenu = false;
+                            return;
+                        }
                         var addToGroup = e.shiftKey || e.ctrlKey || e.metaKey;
 
                         if (e.shiftKey) {
@@ -1946,6 +1952,7 @@ var LogitLensWidget = (function() {
                 // If color menu is visible and click is outside menu and button
                 if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
                     colorMenu.classList.remove("visible");
+                    justDismissedColorMenu = true; // Prevent click handler from opening popup
                     e.stopPropagation();
                     e.preventDefault();
                     return;
