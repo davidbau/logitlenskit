@@ -466,10 +466,14 @@ var LogitLensWidget = (function() {
                 var halfwayCol = Math.floor(visibleLayerIndices.length / 2);
 
                 // Get base color for heatmap:
-                // - "top" mode uses heatmapBaseColor
+                // - "top" mode uses heatmapBaseColor (default purple #8844ff)
                 // - pinned token uses its group color
-                // - non-pinned specific token uses heatmapNextColor
-                var colorModeBaseColor = colorMode === "top" ? heatmapBaseColor : (getColorForToken(colorMode) || heatmapNextColor);
+                // - non-pinned specific token uses heatmapNextColor (default orange #ff8844)
+                var defaultBaseColor = "#8844ff";
+                var defaultNextColor = "#ff8844";
+                var colorModeBaseColor = colorMode === "top"
+                    ? (heatmapBaseColor || defaultBaseColor)
+                    : (getColorForToken(colorMode) || heatmapNextColor || defaultNextColor);
 
                 visiblePositions.forEach(function(pos, rowIdx) {
                     var tok = widgetData.tokens[pos];
