@@ -108,7 +108,7 @@ var LogitLensWidget = (function() {
             #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: 12px; display: flex; align-items: stretch; }
             #${uid} .color-menu-item:hover, #${uid} .color-menu-item.picking { background: #f0f0f0; }
             #${uid} .color-menu-item .color-menu-label { padding: 8px 12px; flex: 1; }
-            #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: 0; border-left: 1px solid #ccc; background: transparent; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+            #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: 0; border-left: 1px solid #ccc; background: transparent; cursor: pointer; opacity: 0; transition: opacity 0.15s; padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
             #${uid} .color-menu-item:hover .color-swatch, #${uid} .color-menu-item.picking .color-swatch { opacity: 1; }
             #${uid} .color-menu-item .color-swatch:hover { border-left-color: #666; }
             #${uid} .legend-close { cursor: pointer; }
