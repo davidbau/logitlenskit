@@ -866,6 +866,7 @@ var LogitLensWidget = (function() {
 
                 menu.innerHTML = html;
                 menu.classList.add("visible");
+                showOverlay(closeColorModeMenu);
 
                 // Add click handlers for menu items
                 menu.querySelectorAll(".color-menu-item").forEach(function(item) {
@@ -1211,11 +1212,32 @@ var LogitLensWidget = (function() {
                 if (popup) popup.classList.remove("visible");
                 document.querySelectorAll("#" + uid + " .pred-cell.selected").forEach(function(c) { c.classList.remove("selected"); });
                 openPopupCell = null;
+                removeOverlay();
             }
 
             function closeColorModeMenu() {
                 var menu = document.getElementById(uid + "_color_menu");
                 if (menu) menu.classList.remove("visible");
+                removeOverlay();
+            }
+
+            // Invisible overlay to catch clicks outside popup/menu
+            function showOverlay(onDismiss) {
+                removeOverlay(); // Remove any existing overlay first
+                var overlay = document.createElement("div");
+                overlay.id = uid + "_overlay";
+                overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:998;";
+                overlay.addEventListener("mousedown", function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onDismiss();
+                });
+                document.body.appendChild(overlay);
+            }
+
+            function removeOverlay() {
+                var overlay = document.getElementById(uid + "_overlay");
+                if (overlay) overlay.remove();
             }
 
             function showPopup(cell, pos, li, cellData) {
@@ -1286,6 +1308,7 @@ var LogitLensWidget = (function() {
                 });
 
                 popup.classList.add("visible");
+                showOverlay(closePopup);
                 var chartInnerWidth = updateChartDimensions();
                 // Always show hover trajectory even if token is pinned
                 drawAllTrajectories(cellData.trajectory, "#999", cellData.token, chartInnerWidth, pos);
@@ -1925,42 +1948,6 @@ var LogitLensWidget = (function() {
             }
 
             // Global event listeners
-            // Use mousedown in capture phase to dismiss popups before other handlers fire
-            document.addEventListener("mousedown", function(e) {
-                // Check if widget still exists (may have been removed)
-                var container = document.getElementById(uid);
-                if (!container) return;
-
-                var popupVisible = document.querySelector("#" + uid + " .popup.visible");
-                var colorMenu = document.getElementById(uid + "_color_menu");
-                var colorMenuVisible = colorMenu && colorMenu.classList.contains("visible");
-
-                // If popup is visible and click is outside popup and close button
-                if (popupVisible && !e.target.closest("#" + uid + " .popup") && !e.target.closest("#" + uid + " .pred-cell")) {
-                    closePopup();
-                    // Register ephemeral click handler to eat the click that follows this mousedown
-                    document.addEventListener("click", function eatClick(clickEvent) {
-                        clickEvent.stopPropagation();
-                        clickEvent.preventDefault();
-                    }, { capture: true, once: true });
-                    e.stopPropagation();
-                    e.preventDefault();
-                    return;
-                }
-
-                // If color menu is visible and click is outside menu and button
-                if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
-                    colorMenu.classList.remove("visible");
-                    // Register ephemeral click handler to eat the click that follows this mousedown
-                    document.addEventListener("click", function eatClick(clickEvent) {
-                        clickEvent.stopPropagation();
-                        clickEvent.preventDefault();
-                    }, { capture: true, once: true });
-                    e.stopPropagation();
-                    e.preventDefault();
-                    return;
-                }
-            }, true); // capture phase
 
             document.getElementById(uid).addEventListener("mousedown", function(e) {
                 if (e.shiftKey) e.preventDefault();
