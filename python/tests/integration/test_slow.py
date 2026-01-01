@@ -11,12 +11,12 @@ import pytest
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 
-# NDIF-hosted models to test
-# TODO: Update this list based on current NDIF availability
+# NDIF-hosted models to test (HOT models from https://nnsight.net/status/)
 NDIF_MODELS = [
     ("EleutherAI/gpt-j-6B", "gptj"),
     ("meta-llama/Llama-3.1-8B", "llama"),
-    # ("meta-llama/Llama-3.1-70B", "llama"),  # Very slow, uncomment for full coverage
+    ("meta-llama/Llama-3.1-70B", "llama"),
+    ("meta-llama/Llama-3.1-70B-Instruct", "llama"),
 ]
 
 
