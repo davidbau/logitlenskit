@@ -60,6 +60,38 @@ describe('DOM Interaction Tests', function() {
         expect(popup.classList.contains('visible')).toBe(false);
     });
 
+    test('clicking different cell while popup open should only dismiss popup', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Get two different cells
+        var cells = document.querySelectorAll('.pred-cell');
+        expect(cells.length).toBeGreaterThan(1);
+        var cell1 = cells[0];
+        var cell2 = cells[1];
+
+        // Click first cell to open popup
+        cell1.click();
+
+        // Verify popup is visible
+        var popup = document.querySelector('.popup');
+        expect(popup.classList.contains('visible')).toBe(true);
+        expect(cell1.classList.contains('selected')).toBe(true);
+
+        // Click second cell - should dismiss popup, not open new one
+        cell2.click();
+
+        // Popup should be closed
+        expect(popup.classList.contains('visible')).toBe(false);
+        // Neither cell should be selected
+        expect(cell1.classList.contains('selected')).toBe(false);
+        expect(cell2.classList.contains('selected')).toBe(false);
+
+        // Click second cell again - now it should open popup
+        cell2.click();
+        expect(popup.classList.contains('visible')).toBe(true);
+        expect(cell2.classList.contains('selected')).toBe(true);
+    });
+
     test('widget should render all tokens', function() {
         var widget = LogitLensWidget('#container', testData);
 

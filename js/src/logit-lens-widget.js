@@ -793,7 +793,7 @@ var LogitLensWidget = (function() {
                 menuItems.forEach(function(item, idx) {
                     var isActive = colorModes.indexOf(item.mode) >= 0;
                     var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
-                    var checkmark = isActive ? '<span style="padding: 8px 0 8px 12px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 0 8px 12px; visibility: hidden;">✓</span>';
+                    var checkmark = isActive ? '<span style="padding: 8px 10px 8px 20px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 10px 8px 20px; visibility: hidden;">✓</span>';
                     html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
                     html += checkmark + '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
                     html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '" style="border:0;background:transparent;padding:0;">';
@@ -802,7 +802,7 @@ var LogitLensWidget = (function() {
 
                 // "None" item - no color swatch, but has invisible checkmark for alignment
                 var noneActive = colorModes.length === 0;
-                var noneCheckmark = noneActive ? '<span style="padding: 8px 0 8px 12px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 0 8px 12px; visibility: hidden;">✓</span>';
+                var noneCheckmark = noneActive ? '<span style="padding: 8px 10px 8px 20px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 10px 8px 20px; visibility: hidden;">✓</span>';
                 html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px;">' + noneCheckmark + '<span class="color-menu-label">None</span></div>';
 
                 menu.innerHTML = html;
@@ -1104,6 +1104,12 @@ var LogitLensWidget = (function() {
                         if (e.shiftKey) {
                             togglePinnedTrajectory(cellData.token, addToGroup);
                             buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            return;
+                        }
+                        // If color menu is open, first click just dismisses it
+                        var colorMenu = document.getElementById(uid + "_color_menu");
+                        if (colorMenu && colorMenu.classList.contains("visible")) {
+                            colorMenu.classList.remove("visible");
                             return;
                         }
                         // If popup is open, first click just dismisses it (even on different cell)

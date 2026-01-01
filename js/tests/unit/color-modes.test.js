@@ -260,6 +260,28 @@ describe('Color Mode Menu', function() {
         // Animation should be applied immediately
         expect(topItem.style.animation).toContain('menuBlink');
     });
+
+    test('clicking cell while menu open should dismiss menu without opening popup', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open color menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        var menu = document.querySelector('#container .color-menu');
+        expect(menu.classList.contains('visible')).toBe(true);
+
+        // Click on a prediction cell
+        var cell = document.querySelector('#container .pred-cell');
+        cell.click();
+
+        // Menu should be dismissed
+        expect(menu.classList.contains('visible')).toBe(false);
+
+        // Popup should NOT be open
+        var popup = document.querySelector('#container .popup');
+        expect(popup.classList.contains('visible')).toBe(false);
+    });
 });
 
 describe('Color Mode Button Visibility', function() {
