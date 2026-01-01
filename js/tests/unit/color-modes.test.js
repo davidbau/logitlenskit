@@ -118,7 +118,7 @@ describe('Color Mode Menu', function() {
         expect(firstItem.textContent).toContain('✓');
     });
 
-    test('regular click should select single mode', function() {
+    test('regular click should select single mode', function(done) {
         var widget = LogitLensWidget('#container', testData);
 
         // Open menu
@@ -129,8 +129,12 @@ describe('Color Mode Menu', function() {
         var noneItem = document.querySelector('#container .color-menu-item[data-mode="none"]');
         noneItem.click();
 
-        var state = widget.getState();
-        expect(state.colorModes).toEqual([]);
+        // Wait for blink animation (200ms) plus buffer
+        setTimeout(function() {
+            var state = widget.getState();
+            expect(state.colorModes).toEqual([]);
+            done();
+        }, 250);
     });
 
     test('shift+click should toggle mode', function() {
@@ -223,7 +227,7 @@ describe('Color Mode Menu', function() {
         expect(state.colorModes).not.toContain('top');
     });
 
-    test('None click should clear all modes', function() {
+    test('None click should clear all modes', function(done) {
         var widget = LogitLensWidget('#container', testData, { colorModes: ['top', 'test'] });
 
         // Open menu
@@ -234,7 +238,70 @@ describe('Color Mode Menu', function() {
         var noneItem = document.querySelector('#container .color-menu-item[data-mode="none"]');
         noneItem.click();
 
-        var state = widget.getState();
-        expect(state.colorModes).toEqual([]);
+        // Wait for blink animation (200ms) plus buffer
+        setTimeout(function() {
+            var state = widget.getState();
+            expect(state.colorModes).toEqual([]);
+            done();
+        }, 250);
+    });
+
+    test('menu item should get blink animation on click', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Click on an item
+        var topItem = document.querySelector('#container .color-menu-item[data-mode="top"]');
+        topItem.click();
+
+        // Animation should be applied immediately
+        expect(topItem.style.animation).toContain('menuBlink');
+    });
+});
+
+describe('Color Mode Button Visibility', function() {
+    beforeEach(function() {
+        document.body.innerHTML = '<div id="container" style="width: 800px;"></div>';
+    });
+
+    afterEach(function() {
+        document.body.innerHTML = '';
+    });
+
+    test('button should have content even when None is selected', function() {
+        var widget = LogitLensWidget('#container', testData, { colorModes: [] });
+
+        var btn = document.querySelector('#container .color-mode-btn');
+        expect(btn).not.toBeNull();
+        // Button should have some text content for clickable area
+        expect(btn.textContent.length).toBeGreaterThan(0);
+    });
+
+    test('button should be invisible when None is selected', function() {
+        var widget = LogitLensWidget('#container', testData, { colorModes: [] });
+
+        var btn = document.querySelector('#container .color-mode-btn');
+        expect(btn.style.color).toBe('transparent');
+    });
+
+    test('button should still be clickable when None is selected', function() {
+        var widget = LogitLensWidget('#container', testData, { colorModes: [] });
+
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Menu should appear
+        var menu = document.querySelector('#container .color-menu.visible');
+        expect(menu).not.toBeNull();
+    });
+
+    test('button should have pointer cursor when None is selected', function() {
+        var widget = LogitLensWidget('#container', testData, { colorModes: [] });
+
+        var btn = document.querySelector('#container .color-mode-btn');
+        expect(btn.style.cursor).toBe('pointer');
     });
 });

@@ -153,7 +153,7 @@ describe('Pinned Groups in Color Menu', function() {
         expect(menuText.indexOf('hello') >= 0 || menuText.indexOf('world') >= 0).toBe(true);
     });
 
-    test('selecting pinned group should add it to colorModes', function() {
+    test('selecting pinned group should add it to colorModes', function(done) {
         var widget = LogitLensWidget('#container', testData, {
             pinnedGroups: [{ tokens: ['testtoken'] }]
         });
@@ -173,9 +173,15 @@ describe('Pinned Groups in Color Menu', function() {
 
         if (groupItem) {
             groupItem.click();
-            var state = widget.getState();
-            // colorModes should contain the first token of the group
-            expect(state.colorModes).toContain('testtoken');
+            // Wait for blink animation (200ms) plus buffer
+            setTimeout(function() {
+                var state = widget.getState();
+                // colorModes should contain the first token of the group
+                expect(state.colorModes).toContain('testtoken');
+                done();
+            }, 250);
+        } else {
+            done();
         }
     });
 });

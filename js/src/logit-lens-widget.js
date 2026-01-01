@@ -113,6 +113,11 @@ var LogitLensWidget = (function() {
             #${uid} .color-menu-item .color-swatch:hover { border-left-color: #666; }
             #${uid} .legend-close { cursor: pointer; }
             #${uid} .legend-close:hover { fill: #e91e63 !important; }
+            @keyframes menuBlink-${uid} {
+                0% { background: #f0f0f0; }
+                50% { background: #d0d0d0; }
+                100% { background: #f0f0f0; }
+            }
         `;
         document.head.appendChild(style);
 
@@ -673,13 +678,15 @@ var LogitLensWidget = (function() {
 
                 var btnStyle = pinnedColor ? "background: " + pinnedColor + "22;" : "";
 
-                // "None" mode: invisible button but still clickable
+                // "None" mode: invisible button but still clickable with placeholder text
                 if (colorModes.length === 0) {
-                    btnStyle = "background: transparent; border: none; color: transparent;";
+                    btnStyle = "background: transparent; border: none; color: transparent; cursor: pointer;";
+                    displayLabel = "colored by";  // Placeholder for clickable area
+                    useColoredBy = false;
                 }
 
                 var labelPrefix = useColoredBy ? "colored by " : "";
-                var labelContent = displayLabel ? "(" + labelPrefix + escapeHtml(displayLabel) + ")" : "";
+                var labelContent = "(" + labelPrefix + escapeHtml(displayLabel) + ")";
                 titleEl.innerHTML = '<span class="ll-title-text" id="' + uid + '_title_text" style="cursor: text;">' + escapeHtml(customTitle) + '</span> <span class="color-mode-btn" id="' + uid + '_color_btn" style="' + btnStyle + '">' + labelContent + '</span>';
                 document.getElementById(uid + "_color_btn").addEventListener("click", showColorModeMenu);
                 document.getElementById(uid + "_title_text").addEventListener("click", startTitleEdit);
@@ -811,11 +818,7 @@ var LogitLensWidget = (function() {
                         var mode = item.dataset.mode;
                         var isModifierClick = ev.shiftKey || ev.ctrlKey || ev.metaKey;
 
-                        if (mode === "none") {
-                            // "None" always clears all modes
-                            colorModes = [];
-                            menu.classList.remove("visible");
-                        } else if (isModifierClick) {
+                        if (isModifierClick && mode !== "none") {
                             // Shift/Ctrl/Cmd+click toggles the mode
                             var idx = colorModes.indexOf(mode);
                             if (idx >= 0) {
@@ -827,12 +830,19 @@ var LogitLensWidget = (function() {
                             // Rebuild menu to update checkmarks
                             showColorModeMenu(ev);
                             return;
-                        } else {
-                            // Regular click replaces with single mode
-                            colorModes = [mode];
-                            menu.classList.remove("visible");
                         }
-                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+
+                        // Regular click: blink then close menu
+                        item.style.animation = "menuBlink-" + uid + " 0.2s ease-in-out";
+                        setTimeout(function() {
+                            if (mode === "none") {
+                                colorModes = [];
+                            } else {
+                                colorModes = [mode];
+                            }
+                            menu.classList.remove("visible");
+                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                        }, 200);
                     });
                 });
 
