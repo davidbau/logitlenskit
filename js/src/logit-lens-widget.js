@@ -1290,6 +1290,7 @@ var LogitLensWidget = (function() {
                     });
 
                     item.addEventListener("mouseleave", function() {
+                        item.classList.remove("active");
                         var chartInnerWidth = updateChartDimensions();
                         drawAllTrajectories(null, null, null, chartInnerWidth, pos);
                     });
