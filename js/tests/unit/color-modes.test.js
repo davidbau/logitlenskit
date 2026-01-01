@@ -161,11 +161,12 @@ describe('Color Mode Menu', function() {
         expect(state.colorModes.length).toBeGreaterThan(1);
     });
 
-    test('shift+click should not rebuild menu, just toggle checkmark', function() {
+    test('shift+click should not rebuild menu, just toggle checkmark and update title', function() {
         var widget = LogitLensWidget('#container', testData);
 
         // Open menu
         var btn = document.querySelector('#container .color-mode-btn');
+        var initialBtnText = btn.textContent;
         btn.click();
 
         // Get menu and menu items
@@ -175,6 +176,7 @@ describe('Color Mode Menu', function() {
 
         // Store reference to the second item element
         var secondItem = menuItems[1];
+        var secondItemMode = secondItem.dataset.mode;
         var secondItemCheckmark = secondItem.querySelector('span');
 
         // Verify checkmark is initially hidden (not active)
@@ -198,6 +200,11 @@ describe('Color Mode Menu', function() {
         // Checkmark should now be visible on the same element
         expect(secondItemCheckmark.style.visibility).toBe('visible');
         expect(secondItemCheckmark.style.fontWeight).toBe('bold');
+
+        // Title/button text should be updated to include "and"
+        var newBtn = document.querySelector('#container .color-mode-btn');
+        expect(newBtn.textContent).toContain('and');
+        expect(newBtn.textContent).not.toBe(initialBtnText);
     });
 
     test('ctrl+click should toggle mode', function() {
