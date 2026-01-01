@@ -601,15 +601,22 @@ var LogitLensWidget = (function() {
                     visibleLayerIndices.forEach(function(li, colIdx) {
                         var cellData = widgetData.cells[pos][li];
 
-                        // Find winning mode: highest probability, ties go to later mode in list
+                        // Find winning mode: highest probability
+                        // "top" always loses ties (other modes win on equal prob)
                         var cellProb = 0;
                         var winningColor = null;
+                        var winningMode = null;
                         if (colorModes.length > 0) {
                             colorModes.forEach(function(mode) {
                                 var modeProb = getProbForMode(mode, cellData);
-                                if (modeProb >= cellProb) {  // >= so later modes win ties
+                                // "top" only wins if strictly greater; others win on >=
+                                var wins = (winningMode === "top") ? (modeProb >= cellProb) :
+                                           (mode === "top") ? (modeProb > cellProb) :
+                                           (modeProb >= cellProb);
+                                if (wins) {
                                     cellProb = modeProb;
                                     winningColor = getColorForMode(mode);
+                                    winningMode = mode;
                                 }
                             });
                         }
