@@ -119,6 +119,37 @@ var LogitLensWidget = (function() {
                 50% { background: #d0d0d0; }
                 100% { background: #f0f0f0; }
             }
+            /* Dark mode styles */
+            #${uid}.dark-mode { background: #1e1e1e; color: #e0e0e0; }
+            #${uid}.dark-mode .ll-title { color: #e0e0e0; }
+            #${uid}.dark-mode .color-mode-btn { background: #2d2d2d; color: #e0e0e0; }
+            #${uid}.dark-mode .color-mode-btn:hover { background: #3d3d3d; }
+            #${uid}.dark-mode .ll-table td, #${uid}.dark-mode .ll-table th { border-color: #444; }
+            #${uid}.dark-mode .pred-cell { color: #e0e0e0; }
+            #${uid}.dark-mode .pred-cell.selected { background: #5c5c00 !important; color: #fff !important; }
+            #${uid}.dark-mode .input-token { background: #2d2d2d; color: #e0e0e0; }
+            #${uid}.dark-mode .input-token:hover { background: #3d3d3d; }
+            #${uid}.dark-mode tr:has(.input-token:hover) .input-token { background: #5c5c00 !important; color: #fff !important; }
+            #${uid}.dark-mode .layer-hdr { background: #2d2d2d; color: #aaa; }
+            #${uid}.dark-mode .corner-hdr { background: #1e1e1e; color: #aaa; }
+            #${uid}.dark-mode .chart-container { background: #252525; }
+            #${uid}.dark-mode .popup { background: #2d2d2d; border-color: #444; color: #e0e0e0; }
+            #${uid}.dark-mode .popup-header { border-bottom-color: #444; }
+            #${uid}.dark-mode .popup-header code { background: #3d3d3d; color: #e0e0e0; }
+            #${uid}.dark-mode .popup-close { color: #888; }
+            #${uid}.dark-mode .popup-close:hover { color: #e0e0e0; }
+            #${uid}.dark-mode .topk-item:hover { background: #3d3d3d; }
+            #${uid}.dark-mode .topk-item.active { background: #3d3d3d; }
+            #${uid}.dark-mode .topk-prob { color: #aaa; }
+            #${uid}.dark-mode .color-menu { background: #2d2d2d; border-color: #444; }
+            #${uid}.dark-mode .color-menu-item:hover, #${uid}.dark-mode .color-menu-item.picking { background: #3d3d3d; }
+            #${uid}.dark-mode .color-menu-item .color-swatch { border-left-color: #555; }
+            #${uid}.dark-mode .resize-hint { color: #666; }
+            @keyframes menuBlink-${uid}-dark {
+                0% { background: #3d3d3d; }
+                50% { background: #4d4d4d; }
+                100% { background: #3d3d3d; }
+            }
         `;
         document.head.appendChild(style);
 
@@ -185,6 +216,7 @@ var LogitLensWidget = (function() {
             var heatmapNextColor = (uiState && uiState.heatmapNextColor) || null; // null = default blue gradient
             var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' } or { type: 'heatmapNext' }
             var lastPinnedGroupIndex = (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1;
+            var darkMode = (uiState && uiState.darkMode) || false;
 
             // Pinned rows: array of {pos: number, lineStyle: object}
             var lineStyles = [
@@ -2184,8 +2216,21 @@ var LogitLensWidget = (function() {
                         return { pos: pr.pos, lineStyleName: pr.lineStyle.name };
                     }),
                     heatmapBaseColor: heatmapBaseColor,
-                    heatmapNextColor: heatmapNextColor
+                    heatmapNextColor: heatmapNextColor,
+                    darkMode: darkMode
                 };
+            }
+
+            // Function to apply or remove dark mode class
+            function applyDarkMode(enabled) {
+                var widgetEl = document.getElementById(uid);
+                if (widgetEl) {
+                    if (enabled) {
+                        widgetEl.classList.add("dark-mode");
+                    } else {
+                        widgetEl.classList.remove("dark-mode");
+                    }
+                }
             }
 
             // Initial build with container width
@@ -2197,6 +2242,11 @@ var LogitLensWidget = (function() {
             var svg = document.getElementById(uid + "_chart");
             if (svg) {
                 svg.setAttribute("height", chartHeight);
+            }
+
+            // Apply dark mode if restored from state
+            if (darkMode) {
+                applyDarkMode(true);
             }
 
             // Build the public interface object that will be returned
@@ -2226,7 +2276,14 @@ var LogitLensWidget = (function() {
                         linkedWidgets.splice(idx, 1);
                     }
                 },
-                _getLinkedWidgets: function() { return linkedWidgets; }
+                _getLinkedWidgets: function() { return linkedWidgets; },
+                setDarkMode: function(enabled) {
+                    darkMode = !!enabled;
+                    applyDarkMode(darkMode);
+                },
+                getDarkMode: function() {
+                    return darkMode;
+                }
             };
 
             return publicInterface;

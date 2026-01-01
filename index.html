@@ -45,6 +45,9 @@
         <label id="link-label" style="margin-left: 15px; display: none;">
             <input type="checkbox" id="link-checkbox"> Link columns
         </label>
+        <label style="margin-left: 15px;">
+            <input type="checkbox" id="dark-mode-checkbox"> Dark mode
+        </label>
         <span id="state-display" style="margin-left: 10px; font-size: 11px; color: #666;"></span>
     </p>
     <div class="preview-container" id="viz2" style="margin-top: 20px;"></div>
@@ -87,6 +90,23 @@ document.getElementById("link-checkbox").addEventListener("change", function() {
     } else {
         widget1.unlinkColumns(widget2);
         widget2.unlinkColumns(widget1);
+    }
+});
+
+// Dark mode checkbox handler
+document.getElementById("dark-mode-checkbox").addEventListener("change", function() {
+    var enabled = this.checked;
+    // Update page background
+    document.body.style.background = enabled ? "#121212" : "#f5f5f5";
+    document.body.style.color = enabled ? "#e0e0e0" : "";
+    // Update preview containers
+    document.querySelectorAll(".preview-container").forEach(function(el) {
+        el.style.background = enabled ? "#1e1e1e" : "white";
+    });
+    // Update all widgets
+    widget1.setDarkMode(enabled);
+    if (widget2) {
+        widget2.setDarkMode(enabled);
     }
 });
 </script>

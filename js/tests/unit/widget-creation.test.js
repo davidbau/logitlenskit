@@ -112,3 +112,72 @@ describe('LogitLensWidget with UI State', () => {
         expect(state.chartHeight).toBe(200);
     });
 });
+
+describe('LogitLensWidget Dark Mode', () => {
+    let container;
+    let sampleData;
+
+    beforeEach(() => {
+        container = createMockContainer();
+        sampleData = loadSampleData();
+    });
+
+    afterEach(() => {
+        cleanupContainer(container);
+    });
+
+    test('darkMode should default to false', () => {
+        const widget = LogitLensWidget('#test-container', sampleData);
+        const state = widget.getState();
+        expect(state.darkMode).toBe(false);
+    });
+
+    test('darkMode should be restorable from initial state', () => {
+        const widget = LogitLensWidget('#test-container', sampleData, { darkMode: true });
+        const state = widget.getState();
+        expect(state.darkMode).toBe(true);
+    });
+
+    test('setDarkMode should apply dark-mode class', () => {
+        const widget = LogitLensWidget('#test-container', sampleData);
+        const widgetEl = document.getElementById(widget.uid);
+
+        expect(widgetEl.classList.contains('dark-mode')).toBe(false);
+
+        widget.setDarkMode(true);
+        expect(widgetEl.classList.contains('dark-mode')).toBe(true);
+
+        widget.setDarkMode(false);
+        expect(widgetEl.classList.contains('dark-mode')).toBe(false);
+    });
+
+    test('getDarkMode should return current dark mode state', () => {
+        const widget = LogitLensWidget('#test-container', sampleData);
+
+        expect(widget.getDarkMode()).toBe(false);
+
+        widget.setDarkMode(true);
+        expect(widget.getDarkMode()).toBe(true);
+    });
+
+    test('dark mode should be applied on widget creation when true in state', () => {
+        const widget = LogitLensWidget('#test-container', sampleData, { darkMode: true });
+        const widgetEl = document.getElementById(widget.uid);
+        expect(widgetEl.classList.contains('dark-mode')).toBe(true);
+    });
+
+    test('dark mode state should round-trip correctly', () => {
+        const widget1 = LogitLensWidget('#test-container', sampleData);
+        widget1.setDarkMode(true);
+
+        const state = widget1.getState();
+        cleanupContainer(container);
+
+        container = createMockContainer();
+        const widget2 = LogitLensWidget('#test-container', sampleData, state);
+
+        expect(widget2.getDarkMode()).toBe(true);
+        const widgetEl = document.getElementById(widget2.uid);
+        expect(widgetEl.classList.contains('dark-mode')).toBe(true);
+    });
+});
