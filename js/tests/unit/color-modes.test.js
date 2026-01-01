@@ -161,6 +161,45 @@ describe('Color Mode Menu', function() {
         expect(state.colorModes.length).toBeGreaterThan(1);
     });
 
+    test('shift+click should not rebuild menu, just toggle checkmark', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Get menu and menu items
+        var menu = document.querySelector('#container .color-menu');
+        var menuItems = document.querySelectorAll('#container .color-menu-item:not([data-mode="none"])');
+        if (menuItems.length < 2) return;
+
+        // Store reference to the second item element
+        var secondItem = menuItems[1];
+        var secondItemCheckmark = secondItem.querySelector('span');
+
+        // Verify checkmark is initially hidden (not active)
+        expect(secondItemCheckmark.style.visibility).not.toBe('visible');
+
+        // Shift+click on second item
+        var shiftClick = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            shiftKey: true
+        });
+        secondItem.dispatchEvent(shiftClick);
+
+        // Menu should still be visible
+        expect(menu.classList.contains('visible')).toBe(true);
+
+        // The same menu item element should still exist (not rebuilt)
+        var menuItemsAfter = document.querySelectorAll('#container .color-menu-item:not([data-mode="none"])');
+        expect(menuItemsAfter[1]).toBe(secondItem);
+
+        // Checkmark should now be visible on the same element
+        expect(secondItemCheckmark.style.visibility).toBe('visible');
+        expect(secondItemCheckmark.style.fontWeight).toBe('bold');
+    });
+
     test('ctrl+click should toggle mode', function() {
         var widget = LogitLensWidget('#container', testData);
 
