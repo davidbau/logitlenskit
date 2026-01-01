@@ -681,7 +681,7 @@ var LogitLensWidget = (function() {
                 // "None" mode: invisible button but still clickable with placeholder text
                 if (colorModes.length === 0) {
                     btnStyle = "background: transparent; border: none; color: transparent; cursor: pointer;";
-                    displayLabel = "colored by";  // Placeholder for clickable area
+                    displayLabel = "colored by None";  // Placeholder for clickable area
                     useColoredBy = false;
                 }
 
@@ -821,14 +821,24 @@ var LogitLensWidget = (function() {
                         if (isModifierClick && mode !== "none") {
                             // Shift/Ctrl/Cmd+click toggles the mode
                             var idx = colorModes.indexOf(mode);
+                            var checkmarkSpan = item.querySelector("span");
                             if (idx >= 0) {
                                 colorModes.splice(idx, 1);
+                                // Update checkmark to hidden
+                                if (checkmarkSpan) {
+                                    checkmarkSpan.style.visibility = "hidden";
+                                    checkmarkSpan.style.fontWeight = "normal";
+                                }
                             } else {
                                 colorModes.push(mode);
+                                // Update checkmark to visible
+                                if (checkmarkSpan) {
+                                    checkmarkSpan.style.visibility = "visible";
+                                    checkmarkSpan.style.fontWeight = "bold";
+                                }
                             }
-                            // Don't close menu on modifier click - allow multi-select
-                            // Rebuild menu to update checkmarks
-                            showColorModeMenu(ev);
+                            // Update table without closing menu
+                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
                             return;
                         }
 
