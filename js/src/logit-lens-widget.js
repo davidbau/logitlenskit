@@ -1152,11 +1152,20 @@ var LogitLensWidget = (function() {
                 // Apply clip-path to the main chart group
                 g.setAttribute("clip-path", "url(#" + clipId + ")")
 
-                var minLabelSpacing = 25;
-                var totalLabelsWidth = currentVisibleIndices.length * minLabelSpacing;
+                // Calculate tick label stride based on actual pixel spacing
+                // Aim for ~24px minimum gap between tick labels
+                var minTickGap = 24;
                 var labelStride = 1;
-                if (usableWidth > 0 && totalLabelsWidth > usableWidth) {
-                    labelStride = Math.max(1, Math.ceil(totalLabelsWidth / usableWidth));
+                if (currentVisibleIndices.length >= 2) {
+                    // Calculate pixel distance between consecutive visible layer indices
+                    var firstX = layerToXForLabels(currentVisibleIndices[0]);
+                    var secondX = layerToXForLabels(currentVisibleIndices[1]);
+                    var pixelsPerIndex = Math.abs(secondX - firstX);
+                    // Only adjust stride if we have meaningful pixel spacing
+                    // (In jsdom/no-layout environments, pixelsPerIndex may be 0 or tiny)
+                    if (pixelsPerIndex >= 1 && pixelsPerIndex < minTickGap) {
+                        labelStride = Math.ceil(minTickGap / pixelsPerIndex);
+                    }
                 }
 
                 var lastIdx = currentVisibleIndices.length - 1;
@@ -1175,10 +1184,15 @@ var LogitLensWidget = (function() {
                 }
 
                 // X-axis tick labels (all except last are draggable for x-zoom)
+                // Skip labels that would appear to the left of x=0 when zoomed (don't rely on clipping)
                 var isLastVisibleIndex = currentVisibleIndices.length - 1;
+                var minXForLabel = 8; // Half width of label, so text doesn't get cut off
                 currentVisibleIndices.forEach(function(layerIdx, i) {
                     if (showAtIndex.has(i)) {
                         var x = layerToXForLabels(layerIdx);
+                        // Skip labels that would be drawn too far left (only when zoomed)
+                        if (plotMinLayer > 0 && x < minXForLabel) return;
+
                         var isLast = (i === isLastVisibleIndex);
                         var isDraggable = !isLast && layerIdx > 0;
 
@@ -1249,7 +1263,7 @@ var LogitLensWidget = (function() {
                 var yAxisHoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 yAxisHoverBg.setAttribute("x", -2); yAxisHoverBg.setAttribute("y", 0);
                 yAxisHoverBg.setAttribute("width", 4); yAxisHoverBg.setAttribute("height", chartInnerHeight);
-                yAxisHoverBg.setAttribute("fill", "rgba(76, 175, 80, 0.3)");
+                yAxisHoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.3)");
                 yAxisHoverBg.style.display = "none";
                 yAxisHoverBg.classList.add("yaxis-hover-bg");
                 yAxisGroup.appendChild(yAxisHoverBg);
@@ -1276,7 +1290,7 @@ var LogitLensWidget = (function() {
                 yAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
                     yAxisDrag = { active: true, startX: e.clientX, startWidth: inputTokenWidth };
-                    yAxis.setAttribute("stroke", "rgba(76, 175, 80, 0.6)");
+                    yAxis.setAttribute("stroke", "rgba(33, 150, 243, 0.6)");
                     e.preventDefault();
                     e.stopPropagation();
                 });
