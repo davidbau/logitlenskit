@@ -702,7 +702,7 @@ var LogitLensWidget = (function() {
                 menuItems.push({
                     mode: "top",
                     label: "top prediction",
-                    color: heatmapBaseColor || "#4488ff",
+                    color: heatmapBaseColor || "#8844ff",
                     colorType: "heatmap",
                     groupIdx: null
                 });
