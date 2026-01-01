@@ -668,18 +668,13 @@ var LogitLensWidget = (function() {
             function updateTitle() {
                 var titleEl = document.getElementById(uid + "_title");
 
-                // Constrain title width to match maxTableWidth if set
+                // Constrain title width to match maxTableWidth if set, but allow wrapping
                 if (maxTableWidth !== null) {
                     titleEl.style.maxWidth = maxTableWidth + "px";
-                    titleEl.style.overflow = "hidden";
-                    titleEl.style.textOverflow = "ellipsis";
-                    titleEl.style.whiteSpace = "nowrap";
                 } else {
                     titleEl.style.maxWidth = "";
-                    titleEl.style.overflow = "";
-                    titleEl.style.textOverflow = "";
-                    titleEl.style.whiteSpace = "";
                 }
+                titleEl.style.whiteSpace = "normal";
                 var displayLabel = "";
                 var pinnedColor = null;
                 var useColoredBy = true;
