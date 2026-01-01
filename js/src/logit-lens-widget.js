@@ -672,6 +672,9 @@ var LogitLensWidget = (function() {
 
             function showColorModeMenu(e) {
                 e.stopPropagation();
+                // Close other menus/popups first
+                closePopup();
+                colorPickerTarget = null;
                 var menu = document.getElementById(uid + "_color_menu");
                 var btn = e.target;
                 var rect = btn.getBoundingClientRect();
@@ -927,13 +930,6 @@ var LogitLensWidget = (function() {
                         e.stopPropagation();
                         var addToGroup = e.shiftKey || e.ctrlKey || e.metaKey;
 
-                        // Ctrl/Cmd+click on high-probability cell opens heatmap color picker
-                        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && cellData.prob >= 0.2) {
-                            var currentColor = heatmapBaseColor || "#4488ff";
-                            openColorPicker(e.clientX, e.clientY, currentColor, { type: "heatmap" });
-                            return;
-                        }
-
                         if (e.shiftKey) {
                             togglePinnedTrajectory(cellData.token, addToGroup);
                             buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
@@ -956,7 +952,15 @@ var LogitLensWidget = (function() {
                 openPopupCell = null;
             }
 
+            function closeColorModeMenu() {
+                var menu = document.getElementById(uid + "_color_menu");
+                if (menu) menu.classList.remove("visible");
+            }
+
             function showPopup(cell, pos, li, cellData) {
+                // Close other menus/popups first
+                closeColorModeMenu();
+                colorPickerTarget = null;
                 openPopupCell = cell;
                 var popup = document.getElementById(uid + "_popup");
                 var rect = cell.getBoundingClientRect();
@@ -1161,7 +1165,25 @@ var LogitLensWidget = (function() {
                 svg.appendChild(defs);
 
                 // Apply clip-path to the main chart group
-                g.setAttribute("clip-path", "url(#" + clipId + ")")
+                g.setAttribute("clip-path", "url(#" + clipId + ")");
+
+                // Create a separate clip-path for trajectories that clips at x=0
+                // (the plot area edge, not extending into y-axis label area)
+                var trajClipId = uid + "_traj_clip";
+                var trajClipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+                trajClipPath.setAttribute("id", trajClipId);
+                var trajClipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                trajClipRect.setAttribute("x", "0");
+                trajClipRect.setAttribute("y", "-5");
+                trajClipRect.setAttribute("width", chartInnerWidth);
+                trajClipRect.setAttribute("height", chartInnerHeight + 10);
+                trajClipPath.appendChild(trajClipRect);
+                defs.appendChild(trajClipPath);
+
+                // Create trajectory group with its own clip-path
+                var trajG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                trajG.setAttribute("clip-path", "url(#" + trajClipId + ")");
+                g.appendChild(trajG)
 
                 // Calculate tick label stride based on actual pixel spacing
                 // Aim for ~24px minimum gap between tick labels
@@ -1394,7 +1416,7 @@ var LogitLensWidget = (function() {
                     pinnedGroups.forEach(function(group, groupIdx) {
                         var traj = getGroupTrajectory(group, showPos);
                         var groupLabel = getGroupLabel(group);
-                        drawSingleTrajectory(g, traj, group.color, maxProb, groupLabel, false, chartInnerWidth, lineStyle.dash);
+                        drawSingleTrajectory(trajG, traj, group.color, maxProb, groupLabel, false, chartInnerWidth, lineStyle.dash);
                     });
                 });
 
@@ -1457,18 +1479,7 @@ var LogitLensWidget = (function() {
                         if (lineStyle.dash) {
                             line.setAttribute("stroke-dasharray", lineStyle.dash);
                         }
-                        line.style.cursor = "pointer";
                         legendItem.appendChild(line);
-
-                        // Ctrl/Cmd+click on line to change color (group 0 for multi-row legend)
-                        (function(grpColor) {
-                            line.addEventListener("click", function(e) {
-                                if (e.ctrlKey || e.metaKey) {
-                                    e.stopPropagation();
-                                    openColorPicker(e.clientX, e.clientY, grpColor, { type: "trajectory", groupIdx: 0 });
-                                }
-                            });
-                        })(group.color);
 
                         var clipId = uid + "_legend_row_clip_" + prIdx;
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
@@ -1525,18 +1536,7 @@ var LogitLensWidget = (function() {
                         line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
                         line.setAttribute("x2", "15"); line.setAttribute("y2", "0");
                         line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", "2");
-                        line.style.cursor = "pointer";
                         legendItem.appendChild(line);
-
-                        // Ctrl/Cmd+click on line to change color
-                        (function(grpIdx, grpColor) {
-                            line.addEventListener("click", function(e) {
-                                if (e.ctrlKey || e.metaKey) {
-                                    e.stopPropagation();
-                                    openColorPicker(e.clientX, e.clientY, grpColor, { type: "trajectory", groupIdx: grpIdx });
-                                }
-                            });
-                        })(groupIdx, group.color);
 
                         var clipId = uid + "_legend_clip_" + groupIdx;
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
@@ -1572,7 +1572,7 @@ var LogitLensWidget = (function() {
 
                 // Show hover trajectory for comparison (even when rows are pinned)
                 if (hoverTrajectory && hoverLabel) {
-                    drawSingleTrajectory(g, hoverTrajectory, hoverColor || "#999", maxProb, hoverLabel, true, chartInnerWidth, "");
+                    drawSingleTrajectory(trajG, hoverTrajectory, hoverColor || "#999", maxProb, hoverLabel, true, chartInnerWidth, "");
 
                     var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
                     legendItem.setAttribute("class", "legend-item hover-legend");
