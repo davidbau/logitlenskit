@@ -20,6 +20,7 @@ var LogitLensWidget = (function() {
             #${uid} {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 margin: 20px 0;
+                padding: 0;
                 position: relative;
                 -webkit-user-select: none;
                 user-select: none;
@@ -626,6 +627,19 @@ var LogitLensWidget = (function() {
 
             function updateTitle() {
                 var titleEl = document.getElementById(uid + "_title");
+
+                // Constrain title width to match maxTableWidth if set
+                if (maxTableWidth !== null) {
+                    titleEl.style.maxWidth = maxTableWidth + "px";
+                    titleEl.style.overflow = "hidden";
+                    titleEl.style.textOverflow = "ellipsis";
+                    titleEl.style.whiteSpace = "nowrap";
+                } else {
+                    titleEl.style.maxWidth = "";
+                    titleEl.style.overflow = "";
+                    titleEl.style.textOverflow = "";
+                    titleEl.style.whiteSpace = "";
+                }
                 var displayLabel = "";
                 var pinnedColor = null;
                 var useColoredBy = true;
@@ -744,6 +758,12 @@ var LogitLensWidget = (function() {
                 closePopup();
                 colorPickerTarget = null;
                 var menu = document.getElementById(uid + "_color_menu");
+
+                // Toggle: if menu is already visible, just close it
+                if (menu.classList.contains("visible")) {
+                    menu.classList.remove("visible");
+                    return;
+                }
                 var btn = e.target;
                 var rect = btn.getBoundingClientRect();
                 var containerRect = document.getElementById(uid).getBoundingClientRect();

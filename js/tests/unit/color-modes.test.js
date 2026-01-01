@@ -104,6 +104,24 @@ describe('Color Mode Menu', function() {
         expect(menu).not.toBeNull();
     });
 
+    test('clicking color mode button again should close menu', function() {
+        var widget = LogitLensWidget('#container', testData);
+
+        var btn = document.querySelector('#container .color-mode-btn');
+
+        // Open menu
+        btn.click();
+        var menu = document.querySelector('#container .color-menu');
+        expect(menu.classList.contains('visible')).toBe(true);
+
+        // Click button again to close - need to get fresh reference since updateTitle recreates button
+        var btn2 = document.querySelector('#container .color-mode-btn');
+        btn2.click();
+
+        // Menu should be closed
+        expect(menu.classList.contains('visible')).toBe(false);
+    });
+
     test('menu should have checkmark for active mode', function() {
         var widget = LogitLensWidget('#container', testData);
 
