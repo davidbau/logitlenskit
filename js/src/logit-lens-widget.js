@@ -841,6 +841,20 @@ var LogitLensWidget = (function() {
                                     checkmarkSpan.style.fontWeight = "bold";
                                 }
                             }
+                            // Update None item checkmark based on whether colorModes is empty
+                            var noneItem = menu.querySelector('.color-menu-item[data-mode="none"]');
+                            if (noneItem) {
+                                var noneCheckmark = noneItem.querySelector("span");
+                                if (noneCheckmark) {
+                                    if (colorModes.length === 0) {
+                                        noneCheckmark.style.visibility = "visible";
+                                        noneCheckmark.style.fontWeight = "bold";
+                                    } else {
+                                        noneCheckmark.style.visibility = "hidden";
+                                        noneCheckmark.style.fontWeight = "normal";
+                                    }
+                                }
+                            }
                             // Update table without closing menu
                             buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
                             return;

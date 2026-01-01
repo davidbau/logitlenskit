@@ -273,6 +273,44 @@ describe('Color Mode Menu', function() {
         expect(state.colorModes).not.toContain('top');
     });
 
+    test('shift+click when None is checked should clear None checkmark', function() {
+        // Start with None selected (empty colorModes)
+        var widget = LogitLensWidget('#container', testData, { colorModes: [] });
+
+        // Open menu
+        var btn = document.querySelector('#container .color-mode-btn');
+        btn.click();
+
+        // Verify None checkmark is visible initially
+        var noneItem = document.querySelector('#container .color-menu-item[data-mode="none"]');
+        var noneCheckmark = noneItem.querySelector('span');
+        expect(noneCheckmark.style.visibility).not.toBe('hidden');
+
+        // Get another menu item to shift-click
+        var menuItems = document.querySelectorAll('#container .color-menu-item:not([data-mode="none"])');
+        expect(menuItems.length).toBeGreaterThan(0);
+        var firstItem = menuItems[0];
+
+        // Shift+click on the item to add it
+        var shiftClick = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            shiftKey: true
+        });
+        firstItem.dispatchEvent(shiftClick);
+
+        // None checkmark should now be hidden
+        expect(noneCheckmark.style.visibility).toBe('hidden');
+
+        // The clicked item should have a visible checkmark
+        var firstItemCheckmark = firstItem.querySelector('span');
+        expect(firstItemCheckmark.style.visibility).toBe('visible');
+
+        // State should have the mode
+        var state = widget.getState();
+        expect(state.colorModes.length).toBe(1);
+    });
+
     test('None click should clear all modes', function(done) {
         var widget = LogitLensWidget('#container', testData, { colorModes: ['top', 'test'] });
 
