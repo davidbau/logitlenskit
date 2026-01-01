@@ -86,7 +86,7 @@ var LogitLensWidget = (function() {
             #${uid} .resize-handle-input:hover, #${uid} .resize-handle-input.dragging { background: rgba(76, 175, 80, 0.4); }
             #${uid} .table-wrapper { position: relative; display: inline-block; }
             #${uid} .resize-handle-bottom {
-                position: absolute; bottom: 0; left: 0; right: 0; height: 6px;
+                position: absolute; bottom: -3px; left: 0; right: 0; height: 6px;
                 cursor: row-resize; background: transparent;
             }
             #${uid} .resize-handle-bottom:hover, #${uid} .resize-handle-bottom.dragging { background: rgba(33, 150, 243, 0.4); }
