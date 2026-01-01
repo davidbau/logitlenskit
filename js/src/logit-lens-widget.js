@@ -1183,11 +1183,6 @@ var LogitLensWidget = (function() {
 
                     cell.addEventListener("click", function(e) {
                         e.stopPropagation();
-                        // If we just dismissed the color menu via mousedown, don't open popup
-                        if (justDismissedColorMenu) {
-                            justDismissedColorMenu = false;
-                            return;
-                        }
                         var addToGroup = e.shiftKey || e.ctrlKey || e.metaKey;
 
                         if (e.shiftKey) {
@@ -1953,11 +1948,18 @@ var LogitLensWidget = (function() {
                 if (colorMenuVisible && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
                     colorMenu.classList.remove("visible");
                     justDismissedColorMenu = true; // Prevent click handler from opening popup
-                    // Reset flag after event cycle in case click lands outside cells
-                    setTimeout(function() { justDismissedColorMenu = false; }, 0);
                     e.stopPropagation();
                     e.preventDefault();
                     return;
+                }
+            }, true); // capture phase
+
+            // Click handler to reset justDismissedColorMenu flag and prevent popup
+            document.addEventListener("click", function(e) {
+                if (justDismissedColorMenu) {
+                    justDismissedColorMenu = false;
+                    e.stopPropagation();
+                    e.preventDefault();
                 }
             }, true); // capture phase
 
