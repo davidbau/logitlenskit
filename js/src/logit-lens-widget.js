@@ -712,7 +712,7 @@ var LogitLensWidget = (function() {
                     menuItems.push({
                         mode: topToken,
                         label: topToken,
-                        color: heatmapNextColor || "#44aa88",
+                        color: heatmapNextColor || "#ff8844",
                         colorType: "heatmapNext",
                         groupIdx: null
                     });
