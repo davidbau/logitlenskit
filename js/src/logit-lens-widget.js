@@ -132,6 +132,7 @@ var LogitLensWidget = (function() {
                     </div>
                     <div id="${uid}_popup_content"></div>
                 </div>
+                <input type="color" id="${uid}_color_picker" style="position: absolute; opacity: 0; pointer-events: none;">
                 <div class="color-menu" id="${uid}_color_menu"></div>
             </div>
         `;
@@ -166,6 +167,8 @@ var LogitLensWidget = (function() {
             var colors = ["#2196F3", "#e91e63", "#4CAF50", "#FF9800", "#9C27B0", "#00BCD4", "#F44336", "#8BC34A"];
             var colorIndex = (uiState && uiState.colorIndex) || 0;
             var pinnedGroups = (uiState && uiState.pinnedGroups) ? JSON.parse(JSON.stringify(uiState.pinnedGroups)) : [];
+            var heatmapBaseColor = (uiState && uiState.heatmapBaseColor) || null; // null = default blue gradient
+            var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' }
             var lastPinnedGroupIndex = (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1;
 
             // Pinned rows: array of {pos: number, lineStyle: object}
@@ -457,8 +460,8 @@ var LogitLensWidget = (function() {
 
                 var halfwayCol = Math.floor(visibleLayerIndices.length / 2);
 
-                // Get base color for heatmap (if colorMode is a pinned token)
-                var colorModeBaseColor = colorMode !== "top" ? getColorForToken(colorMode) : null;
+                // Get base color for heatmap (if colorMode is a pinned token, or custom heatmap color)
+                var colorModeBaseColor = colorMode !== "top" ? getColorForToken(colorMode) : heatmapBaseColor;
 
                 visiblePositions.forEach(function(pos, rowIdx) {
                     var tok = widgetData.tokens[pos];
@@ -923,6 +926,14 @@ var LogitLensWidget = (function() {
                     cell.addEventListener("click", function(e) {
                         e.stopPropagation();
                         var addToGroup = e.shiftKey || e.ctrlKey || e.metaKey;
+
+                        // Ctrl/Cmd+click on high-probability cell opens heatmap color picker
+                        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && cellData.prob >= 0.2) {
+                            var currentColor = heatmapBaseColor || "#4488ff";
+                            openColorPicker(e.clientX, e.clientY, currentColor, { type: "heatmap" });
+                            return;
+                        }
+
                         if (e.shiftKey) {
                             togglePinnedTrajectory(cellData.token, addToGroup);
                             buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
@@ -1446,7 +1457,18 @@ var LogitLensWidget = (function() {
                         if (lineStyle.dash) {
                             line.setAttribute("stroke-dasharray", lineStyle.dash);
                         }
+                        line.style.cursor = "pointer";
                         legendItem.appendChild(line);
+
+                        // Ctrl/Cmd+click on line to change color (group 0 for multi-row legend)
+                        (function(grpColor) {
+                            line.addEventListener("click", function(e) {
+                                if (e.ctrlKey || e.metaKey) {
+                                    e.stopPropagation();
+                                    openColorPicker(e.clientX, e.clientY, grpColor, { type: "trajectory", groupIdx: 0 });
+                                }
+                            });
+                        })(group.color);
 
                         var clipId = uid + "_legend_row_clip_" + prIdx;
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
@@ -1503,7 +1525,18 @@ var LogitLensWidget = (function() {
                         line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
                         line.setAttribute("x2", "15"); line.setAttribute("y2", "0");
                         line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", "2");
+                        line.style.cursor = "pointer";
                         legendItem.appendChild(line);
+
+                        // Ctrl/Cmd+click on line to change color
+                        (function(grpIdx, grpColor) {
+                            line.addEventListener("click", function(e) {
+                                if (e.ctrlKey || e.metaKey) {
+                                    e.stopPropagation();
+                                    openColorPicker(e.clientX, e.clientY, grpColor, { type: "trajectory", groupIdx: grpIdx });
+                                }
+                            });
+                        })(groupIdx, group.color);
 
                         var clipId = uid + "_legend_clip_" + groupIdx;
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
@@ -1653,6 +1686,35 @@ var LogitLensWidget = (function() {
                 var chartInnerWidth = updateChartDimensions();
                 drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
             });
+
+            // Color picker handler
+            var colorPicker = document.getElementById(uid + "_color_picker");
+            colorPicker.addEventListener("input", function(e) {
+                if (!colorPickerTarget) return;
+                var newColor = e.target.value;
+                if (colorPickerTarget.type === "trajectory") {
+                    var group = pinnedGroups[colorPickerTarget.groupIdx];
+                    if (group) {
+                        group.color = newColor;
+                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                    }
+                } else if (colorPickerTarget.type === "heatmap") {
+                    heatmapBaseColor = newColor;
+                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                }
+            });
+            colorPicker.addEventListener("change", function() {
+                colorPickerTarget = null;
+            });
+
+            // Helper to open color picker
+            function openColorPicker(x, y, currentColor, target) {
+                colorPickerTarget = target;
+                colorPicker.value = currentColor;
+                colorPicker.style.left = x + "px";
+                colorPicker.style.top = y + "px";
+                colorPicker.click();
+            }
 
             // Bottom resize handle for truncating rows
             (function() {
@@ -1847,7 +1909,8 @@ var LogitLensWidget = (function() {
                     lastPinnedGroupIndex: lastPinnedGroupIndex,
                     pinnedRows: pinnedRows.map(function(pr) {
                         return { pos: pr.pos, lineStyleName: pr.lineStyle.name };
-                    })
+                    }),
+                    heatmapBaseColor: heatmapBaseColor
                 };
             }
 
