@@ -144,7 +144,7 @@ var LogitLensWidget = (function() {
             #${uid}.dark-mode .color-menu { background: #2d2d2d; border-color: #444; }
             #${uid}.dark-mode .color-menu-item:hover, #${uid}.dark-mode .color-menu-item.picking { background: #3d3d3d; }
             #${uid}.dark-mode .color-menu-item .color-swatch { border-left-color: #555; }
-            #${uid}.dark-mode .resize-hint { color: #666; }
+            #${uid}.dark-mode .resize-hint { color: #888; }
             @keyframes menuBlink-${uid}-dark {
                 0% { background: #3d3d3d; }
                 50% { background: #4d4d4d; }
