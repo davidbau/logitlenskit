@@ -172,7 +172,8 @@ var LogitLensWidget = (function() {
             var colorIndex = (uiState && uiState.colorIndex) || 0;
             var pinnedGroups = (uiState && uiState.pinnedGroups) ? JSON.parse(JSON.stringify(uiState.pinnedGroups)) : [];
             var heatmapBaseColor = (uiState && uiState.heatmapBaseColor) || null; // null = default blue gradient
-            var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' }
+            var heatmapNextColor = (uiState && uiState.heatmapNextColor) || null; // null = default blue gradient
+            var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' } or { type: 'heatmapNext' }
             var lastPinnedGroupIndex = (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1;
 
             // Pinned rows: array of {pos: number, lineStyle: object}
@@ -464,8 +465,11 @@ var LogitLensWidget = (function() {
 
                 var halfwayCol = Math.floor(visibleLayerIndices.length / 2);
 
-                // Get base color for heatmap (use pinned group color if available, otherwise heatmapBaseColor)
-                var colorModeBaseColor = (colorMode !== "top" && getColorForToken(colorMode)) || heatmapBaseColor;
+                // Get base color for heatmap:
+                // - "top" mode uses heatmapBaseColor
+                // - pinned token uses its group color
+                // - non-pinned specific token uses heatmapNextColor
+                var colorModeBaseColor = colorMode === "top" ? heatmapBaseColor : (getColorForToken(colorMode) || heatmapNextColor);
 
                 visiblePositions.forEach(function(pos, rowIdx) {
                     var tok = widgetData.tokens[pos];
@@ -703,13 +707,13 @@ var LogitLensWidget = (function() {
                     groupIdx: null
                 });
 
-                // Specific top token (if not pinned) - also uses heatmapBaseColor
+                // Specific top token (if not pinned) - uses heatmapNextColor
                 if (findGroupForToken(topToken) < 0) {
                     menuItems.push({
                         mode: topToken,
                         label: topToken,
-                        color: heatmapBaseColor || "#4488ff",
-                        colorType: "heatmap",
+                        color: heatmapNextColor || "#4488ff",
+                        colorType: "heatmapNext",
                         groupIdx: null
                     });
                 }
@@ -774,6 +778,8 @@ var LogitLensWidget = (function() {
 
                         if (itemData.colorType === "heatmap") {
                             heatmapBaseColor = newColor;
+                        } else if (itemData.colorType === "heatmapNext") {
+                            heatmapNextColor = newColor;
                         } else if (itemData.colorType === "trajectory" && itemData.groupIdx !== null) {
                             pinnedGroups[itemData.groupIdx].color = newColor;
                             // Update the border color on the menu item
@@ -1989,7 +1995,8 @@ var LogitLensWidget = (function() {
                     pinnedRows: pinnedRows.map(function(pr) {
                         return { pos: pr.pos, lineStyleName: pr.lineStyle.name };
                     }),
-                    heatmapBaseColor: heatmapBaseColor
+                    heatmapBaseColor: heatmapBaseColor,
+                    heatmapNextColor: heatmapNextColor
                 };
             }
 
