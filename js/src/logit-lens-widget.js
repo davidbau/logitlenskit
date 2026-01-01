@@ -165,7 +165,11 @@ var LogitLensWidget = (function() {
             plotMinLayer = Math.max(0, Math.min(nLayers - 2, plotMinLayer));
             var openPopupCell = null;
             var currentHoverPos = widgetData.tokens.length - 1;
-            var colorMode = (uiState && uiState.colorMode) || "top";
+            // colorModes is an array of active color modes; empty array means "none"
+            // Backward compat: old state may have colorMode as string
+            var colorModes = (uiState && uiState.colorModes) ? uiState.colorModes.slice() :
+                             (uiState && uiState.colorMode && uiState.colorMode !== "none") ? [uiState.colorMode] :
+                             (uiState && uiState.colorMode === "none") ? [] : ["top"];
             var customTitle = (uiState && uiState.title) || "Logit Lens: Top Predictions by Layer";
 
             var colors = ["#2196F3", "#e91e63", "#4CAF50", "#FF9800", "#9C27B0", "#00BCD4", "#F44336", "#8BC34A"];
@@ -465,15 +469,24 @@ var LogitLensWidget = (function() {
 
                 var halfwayCol = Math.floor(visibleLayerIndices.length / 2);
 
-                // Get base color for heatmap:
-                // - "top" mode uses heatmapBaseColor (default purple #8844ff)
-                // - pinned token uses its group color
-                // - non-pinned specific token uses heatmapNextColor (default burnt orange #cc6622)
-                var defaultBaseColor = "#8844ff";
-                var defaultNextColor = "#cc6622";
-                var colorModeBaseColor = colorMode === "top"
-                    ? (heatmapBaseColor || defaultBaseColor)
-                    : (getColorForToken(colorMode) || heatmapNextColor || defaultNextColor);
+                // Default colors for heatmap modes
+                var defaultBaseColor = "#8844ff";  // purple for "top"
+                var defaultNextColor = "#cc6622";  // burnt orange for specific token
+
+                // Helper to get color for a mode
+                function getColorForMode(mode) {
+                    if (mode === "top") return heatmapBaseColor || defaultBaseColor;
+                    var groupColor = getColorForToken(mode);
+                    if (groupColor) return groupColor;
+                    return heatmapNextColor || defaultNextColor;
+                }
+
+                // Helper to get probability for a mode at a cell
+                function getProbForMode(mode, cellData) {
+                    if (mode === "top") return cellData.prob;
+                    var found = cellData.topk.find(function(t) { return t.token === mode; });
+                    return found ? found.prob : 0;
+                }
 
                 visiblePositions.forEach(function(pos, rowIdx) {
                     var tok = widgetData.tokens[pos];
@@ -509,11 +522,22 @@ var LogitLensWidget = (function() {
 
                     visibleLayerIndices.forEach(function(li, colIdx) {
                         var cellData = widgetData.cells[pos][li];
-                        var cellProb = colorMode === "top" ? cellData.prob :
-                            (cellData.topk.find(function(t) { return t.token === colorMode; }) || {prob: 0}).prob;
 
-                        var color = colorMode === "none" ? "#fff" : probToColor(cellProb, colorModeBaseColor);
-                        var textColor = colorMode === "none" ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
+                        // Find winning mode: highest probability, ties go to later mode in list
+                        var cellProb = 0;
+                        var winningColor = null;
+                        if (colorModes.length > 0) {
+                            colorModes.forEach(function(mode) {
+                                var modeProb = getProbForMode(mode, cellData);
+                                if (modeProb >= cellProb) {  // >= so later modes win ties
+                                    cellProb = modeProb;
+                                    winningColor = getColorForMode(mode);
+                                }
+                            });
+                        }
+
+                        var color = colorModes.length === 0 ? "#fff" : probToColor(cellProb, winningColor);
+                        var textColor = colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
                         var pinnedColor = getColorForToken(cellData.token);
                         if (!pinnedColor) {
                             var winningGroup = getWinningGroupAtCell(pos, li);
@@ -593,49 +617,70 @@ var LogitLensWidget = (function() {
 
             function updateTitle() {
                 var titleEl = document.getElementById(uid + "_title");
-                var displayLabel = "top prediction";
+                var displayLabel = "";
                 var pinnedColor = null;
                 var useColoredBy = true;
 
-                if (colorMode !== "top" && colorMode !== "none") {
-                    var groupIdx = findGroupForToken(colorMode);
-                    if (groupIdx >= 0) {
-                        var group = pinnedGroups[groupIdx];
-                        displayLabel = getGroupLabel(group);
-                        pinnedColor = group.color;
+                if (colorModes.length === 0) {
+                    // No modes = "none"
+                    displayLabel = "";
+                    useColoredBy = false;
+                } else if (colorModes.length === 1) {
+                    // Single mode - show its name
+                    var mode = colorModes[0];
+                    if (mode === "top") {
+                        displayLabel = "top prediction";
                     } else {
-                        displayLabel = visualizeSpaces(colorMode);
-                    }
-
-                    // Check if selected color matches top prediction at last position
-                    // and title looks like a prompt - if so, remove "colored by"
-                    var lastPos = widgetData.tokens.length - 1;
-                    var lastLayerIdx = currentVisibleIndices[currentVisibleIndices.length - 1];
-                    var topToken = widgetData.cells[lastPos][lastLayerIdx].token;
-
-                    if (colorMode === topToken) {
-                        var tokens = widgetData.tokens.slice();
-                        if (tokens.length > 0 && /^<[^>]+>$/.test(tokens[0].trim())) {
-                            tokens = tokens.slice(1);
+                        var groupIdx = findGroupForToken(mode);
+                        if (groupIdx >= 0) {
+                            var group = pinnedGroups[groupIdx];
+                            displayLabel = getGroupLabel(group);
+                            pinnedColor = group.color;
+                        } else {
+                            displayLabel = visualizeSpaces(mode);
                         }
-                        if (tokens.length >= 3) {
-                            var suffix = tokens.slice(-3).join("");
-                            if (suffix.length > 0 && customTitle.endsWith(suffix)) {
-                                useColoredBy = false;
+
+                        // Check if selected color matches top prediction at last position
+                        var lastPos = widgetData.tokens.length - 1;
+                        var lastLayerIdx = currentVisibleIndices[currentVisibleIndices.length - 1];
+                        var topToken = widgetData.cells[lastPos][lastLayerIdx].token;
+
+                        if (mode === topToken) {
+                            var tokens = widgetData.tokens.slice();
+                            if (tokens.length > 0 && /^<[^>]+>$/.test(tokens[0].trim())) {
+                                tokens = tokens.slice(1);
+                            }
+                            if (tokens.length >= 3) {
+                                var suffix = tokens.slice(-3).join("");
+                                if (suffix.length > 0 && customTitle.endsWith(suffix)) {
+                                    useColoredBy = false;
+                                }
                             }
                         }
                     }
+                } else {
+                    // Multiple modes - show all labels joined by " and "
+                    var labels = colorModes.map(function(mode) {
+                        if (mode === "top") return "top prediction";
+                        var groupIdx = findGroupForToken(mode);
+                        if (groupIdx >= 0) {
+                            return getGroupLabel(pinnedGroups[groupIdx]);
+                        }
+                        return visualizeSpaces(mode);
+                    });
+                    displayLabel = labels.join(" and ");
                 }
 
                 var btnStyle = pinnedColor ? "background: " + pinnedColor + "22;" : "";
 
                 // "None" mode: invisible button but still clickable
-                if (colorMode === "none") {
+                if (colorModes.length === 0) {
                     btnStyle = "background: transparent; border: none; color: transparent;";
                 }
 
                 var labelPrefix = useColoredBy ? "colored by " : "";
-                titleEl.innerHTML = '<span class="ll-title-text" id="' + uid + '_title_text" style="cursor: text;">' + escapeHtml(customTitle) + '</span> <span class="color-mode-btn" id="' + uid + '_color_btn" style="' + btnStyle + '">(' + labelPrefix + escapeHtml(displayLabel) + ')</span>';
+                var labelContent = displayLabel ? "(" + labelPrefix + escapeHtml(displayLabel) + ")" : "";
+                titleEl.innerHTML = '<span class="ll-title-text" id="' + uid + '_title_text" style="cursor: text;">' + escapeHtml(customTitle) + '</span> <span class="color-mode-btn" id="' + uid + '_color_btn" style="' + btnStyle + '">' + labelContent + '</span>';
                 document.getElementById(uid + "_color_btn").addEventListener("click", showColorModeMenu);
                 document.getElementById(uid + "_title_text").addEventListener("click", startTitleEdit);
             }
@@ -736,30 +781,55 @@ var LogitLensWidget = (function() {
                     });
                 });
 
-                // Build HTML
+                // Build HTML with checkmarks for active modes
                 var html = "";
                 menuItems.forEach(function(item, idx) {
+                    var isActive = colorModes.indexOf(item.mode) >= 0;
                     var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
+                    var checkmark = isActive ? '<span style="margin-right: 4px;">✓</span>' : '<span style="margin-right: 4px; visibility: hidden;">✓</span>';
                     html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
-                    html += '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
+                    html += checkmark + '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
                     html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '" style="border:0;background:transparent;padding:0;">';
                     html += '</div>';
                 });
 
-                // "None" item - no color swatch
+                // "None" item - no color swatch, no checkmark
                 html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px;"><span class="color-menu-label">None</span></div>';
 
                 menu.innerHTML = html;
                 menu.classList.add("visible");
 
-                // Add click handlers for menu items (selects color mode)
+                // Add click handlers for menu items
                 menu.querySelectorAll(".color-menu-item").forEach(function(item) {
                     item.addEventListener("click", function(ev) {
                         // Don't close menu if clicking on color swatch
                         if (ev.target.classList.contains("color-swatch")) return;
                         ev.stopPropagation();
-                        colorMode = item.dataset.mode;
-                        menu.classList.remove("visible");
+
+                        var mode = item.dataset.mode;
+                        var isModifierClick = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+
+                        if (mode === "none") {
+                            // "None" always clears all modes
+                            colorModes = [];
+                            menu.classList.remove("visible");
+                        } else if (isModifierClick) {
+                            // Shift/Ctrl/Cmd+click toggles the mode
+                            var idx = colorModes.indexOf(mode);
+                            if (idx >= 0) {
+                                colorModes.splice(idx, 1);
+                            } else {
+                                colorModes.push(mode);
+                            }
+                            // Don't close menu on modifier click - allow multi-select
+                            // Rebuild menu to update checkmarks
+                            showColorModeMenu(ev);
+                            return;
+                        } else {
+                            // Regular click replaces with single mode
+                            colorModes = [mode];
+                            menu.classList.remove("visible");
+                        }
                         buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
                     });
                 });
@@ -2004,7 +2074,7 @@ var LogitLensWidget = (function() {
                     maxRows: currentMaxRows,
                     maxTableWidth: maxTableWidth,
                     plotMinLayer: plotMinLayer,
-                    colorMode: colorMode,
+                    colorModes: colorModes.slice(),
                     title: customTitle,
                     colorIndex: colorIndex,
                     pinnedGroups: JSON.parse(JSON.stringify(pinnedGroups)),

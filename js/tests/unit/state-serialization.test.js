@@ -35,7 +35,7 @@ describe('State Serialization', () => {
         expect(state).toHaveProperty('cellWidth');
         expect(state).toHaveProperty('inputTokenWidth');
         expect(state).toHaveProperty('chartHeight');
-        expect(state).toHaveProperty('colorMode');
+        expect(state).toHaveProperty('colorModes');
         expect(state).toHaveProperty('pinnedGroups');
         expect(state).toHaveProperty('pinnedRows');
     });
