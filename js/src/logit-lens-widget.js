@@ -1938,6 +1938,11 @@ var LogitLensWidget = (function() {
                 // If popup is visible and click is outside popup and close button
                 if (popupVisible && !e.target.closest("#" + uid + " .popup") && !e.target.closest("#" + uid + " .pred-cell")) {
                     closePopup();
+                    // Register ephemeral click handler to eat the click that follows this mousedown
+                    document.addEventListener("click", function eatClick(clickEvent) {
+                        clickEvent.stopPropagation();
+                        clickEvent.preventDefault();
+                    }, { capture: true, once: true });
                     e.stopPropagation();
                     e.preventDefault();
                     return;
