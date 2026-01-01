@@ -364,9 +364,8 @@ var LogitLensWidget = (function() {
             }
 
             // Map of invisible/special characters to their entity names
+            // Note: regular space and modifier letter shelf are NOT here - spaces get visualized as shelf
             var invisibleEntityMap = {
-                '\u02FD': '&#x02FD;',    // Modifier letter shelf (our space visualization)
-                ' ': '&nbsp;',           // Regular space
                 '\u00A0': '&nbsp;',      // Non-breaking space
                 '\u00AD': '&shy;',       // Soft hyphen
                 '\u200B': '&#8203;',     // Zero-width space
@@ -389,18 +388,8 @@ var LogitLensWidget = (function() {
 
             function visualizeSpaces(text, spellOutEntities) {
                 var result = text;
-                var leadingSpaces = 0;
-                while (leadingSpaces < result.length && result[leadingSpaces] === ' ') leadingSpaces++;
-                if (leadingSpaces > 0) {
-                    result = '\u02FD'.repeat(leadingSpaces) + result.slice(leadingSpaces);
-                }
-                var trailingSpaces = 0;
-                while (trailingSpaces < result.length && result[result.length - 1 - trailingSpaces] === ' ') trailingSpaces++;
-                if (trailingSpaces > 0) {
-                    result = result.slice(0, result.length - trailingSpaces) + '\u02FD'.repeat(trailingSpaces);
-                }
 
-                // If spellOutEntities is true, convert invisible chars to entity names
+                // If spellOutEntities is true, convert invisible chars to entity names FIRST
                 if (spellOutEntities) {
                     var output = '';
                     for (var i = 0; i < result.length; i++) {
@@ -411,7 +400,19 @@ var LogitLensWidget = (function() {
                             output += ch;
                         }
                     }
-                    return output;
+                    result = output;
+                }
+
+                // Then convert leading/trailing spaces to modifier letter shelf
+                var leadingSpaces = 0;
+                while (leadingSpaces < result.length && result[leadingSpaces] === ' ') leadingSpaces++;
+                if (leadingSpaces > 0) {
+                    result = '\u02FD'.repeat(leadingSpaces) + result.slice(leadingSpaces);
+                }
+                var trailingSpaces = 0;
+                while (trailingSpaces < result.length && result[result.length - 1 - trailingSpaces] === ' ') trailingSpaces++;
+                if (trailingSpaces > 0) {
+                    result = result.slice(0, result.length - trailingSpaces) + '\u02FD'.repeat(trailingSpaces);
                 }
 
                 return result;
