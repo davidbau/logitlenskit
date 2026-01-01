@@ -152,8 +152,12 @@ var LogitLensWidget = (function() {
             var maxCellWidth = 200;
             var currentCellWidth = (uiState && uiState.cellWidth) || 44;
             var currentVisibleIndices = [];
+            var currentStride = 1;
             var currentMaxRows = (uiState && uiState.maxRows !== undefined) ? uiState.maxRows : null;
             var maxTableWidth = (uiState && uiState.maxTableWidth !== undefined) ? uiState.maxTableWidth : null;
+            var plotMinLayer = (uiState && uiState.plotMinLayer !== undefined) ? uiState.plotMinLayer : 0;
+            // Clamp plotMinLayer to valid range: [0, nLayers - 2]
+            plotMinLayer = Math.max(0, Math.min(nLayers - 2, plotMinLayer));
             var openPopupCell = null;
             var currentHoverPos = widgetData.tokens.length - 1;
             var colorMode = (uiState && uiState.colorMode) || "top";
@@ -425,9 +429,10 @@ var LogitLensWidget = (function() {
                 return tableWidth - inputTokenWidth;
             }
 
-            function buildTable(cellWidth, visibleLayerIndices, maxRows) {
+            function buildTable(cellWidth, visibleLayerIndices, maxRows, stride) {
                 currentVisibleIndices = visibleLayerIndices;
                 currentMaxRows = maxRows;
+                if (stride !== undefined) currentStride = stride;
                 var table = document.getElementById(uid + "_table");
                 var html = "";
 
@@ -546,9 +551,8 @@ var LogitLensWidget = (function() {
                 updateTitle();
 
                 var hint = document.getElementById(uid + "_resize_hint");
-                var stride = visibleLayerIndices.length < nLayers ? Math.ceil(nLayers / visibleLayerIndices.length) : 1;
-                var hintMain = stride > 1 ?
-                    "showing every " + stride + " layers ending at " + (nLayers-1) :
+                var hintMain = currentStride > 1 ?
+                    "showing every " + currentStride + " layers ending at " + (nLayers-1) :
                     "showing all " + nLayers + " layers";
                 hint.innerHTML = '<span class="resize-hint-main">' + hintMain + '</span><span class="resize-hint-extra"> (drag column borders to adjust)</span>';
 
@@ -722,6 +726,7 @@ var LogitLensWidget = (function() {
             var colResizeDrag = { active: false, type: null, startX: 0, startWidth: 0, colIdx: 0 };
             var yAxisDrag = { active: false, startX: 0, startWidth: 0 };
             var xAxisDrag = { active: false, startY: 0, startHeight: 0 };
+            var plotMinLayerDrag = { active: false, startX: 0, startMinLayer: 0, layerIdx: 0, layerXAtStart: 0, usableWidth: 0, dotRadius: 0 };
             var rightEdgeDrag = { active: false, startX: 0, startTableWidth: 0, hadMaxTableWidth: false, startMaxTableWidth: null };
 
             function attachResizeListeners() {
@@ -755,7 +760,7 @@ var LogitLensWidget = (function() {
                 if (colResizeDrag.type === 'input') {
                     inputTokenWidth = Math.max(40, Math.min(200, colResizeDrag.startWidth + delta));
                     var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows);
+                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
                     notifyLinkedWidgets();
                 } else if (colResizeDrag.type === 'column') {
                     var numCols = colResizeDrag.colIdx + 1;
@@ -764,7 +769,7 @@ var LogitLensWidget = (function() {
                     if (Math.abs(newWidth - currentCellWidth) > 1) {
                         currentCellWidth = newWidth;
                         var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                        buildTable(currentCellWidth, result.indices, currentMaxRows);
+                        buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
                         notifyLinkedWidgets();
                     }
                 }
@@ -782,6 +787,9 @@ var LogitLensWidget = (function() {
                 }
                 if (xAxisDrag.active) {
                     xAxisDrag.active = false;
+                }
+                if (plotMinLayerDrag.active) {
+                    plotMinLayerDrag.active = false;
                 }
                 if (rightEdgeDrag.active) {
                     rightEdgeDrag.active = false;
@@ -808,8 +816,53 @@ var LogitLensWidget = (function() {
                 var delta = e.clientX - yAxisDrag.startX;
                 inputTokenWidth = Math.max(40, Math.min(200, yAxisDrag.startWidth + delta));
                 var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                buildTable(currentCellWidth, result.indices, currentMaxRows);
+                buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
                 notifyLinkedWidgets();
+            });
+
+            // Plot min layer drag for x-axis zoom
+            document.addEventListener("mousemove", function(e) {
+                if (!plotMinLayerDrag.active) return;
+                var delta = e.clientX - plotMinLayerDrag.startX;
+
+                // Calculate what plotMinLayer value would put the dragged layer at the new x position
+                // The relationship is: x = dotRadius + ((layerIdx - plotMinLayer) / visibleRange) * (usableWidth - 2*dotRadius)
+                // where visibleRange = (nLayers - 1) - plotMinLayer
+                // Solving for plotMinLayer given a new x position for the dragged layer:
+                var dr = plotMinLayerDrag.dotRadius;
+                var uw = plotMinLayerDrag.usableWidth;
+                var layerIdx = plotMinLayerDrag.layerIdx;
+                var targetX = plotMinLayerDrag.layerXAtStart + delta;
+
+                // Clamp targetX to valid range
+                targetX = Math.max(dr, Math.min(uw - dr, targetX));
+
+                // From the formula: targetX = dr + ((layerIdx - newMinLayer) / ((nLayers-1) - newMinLayer)) * (uw - 2*dr)
+                // Let's solve for newMinLayer:
+                // (targetX - dr) / (uw - 2*dr) = (layerIdx - newMinLayer) / ((nLayers-1) - newMinLayer)
+                // Let t = (targetX - dr) / (uw - 2*dr)
+                // t * ((nLayers-1) - newMinLayer) = layerIdx - newMinLayer
+                // t * (nLayers-1) - t * newMinLayer = layerIdx - newMinLayer
+                // t * (nLayers-1) - layerIdx = t * newMinLayer - newMinLayer
+                // t * (nLayers-1) - layerIdx = newMinLayer * (t - 1)
+                // newMinLayer = (t * (nLayers-1) - layerIdx) / (t - 1)
+                var t = (targetX - dr) / (uw - 2 * dr);
+                if (Math.abs(t - 1) < 0.001) {
+                    // t is very close to 1, which means the layer is at the right edge
+                    // This shouldn't happen for draggable layers (only last is non-draggable)
+                    return;
+                }
+                var newMinLayer = (t * (nLayers - 1) - layerIdx) / (t - 1);
+
+                // Clamp to valid range: 0 <= plotMinLayer < nLayers - 1
+                // Also can't set it beyond the dragged layer (that would flip the axis)
+                newMinLayer = Math.max(0, Math.min(layerIdx - 0.1, newMinLayer));
+
+                if (Math.abs(newMinLayer - plotMinLayer) > 0.01) {
+                    plotMinLayer = newMinLayer;
+                    var chartInnerWidth = updateChartDimensions();
+                    drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                }
             });
 
             function attachCellListeners() {
@@ -832,14 +885,12 @@ var LogitLensWidget = (function() {
                                 drawAllTrajectories(null, null, null, chartInnerWidth, pos);
                             }
                         } else {
-                            // For prediction cells, show that cell's token
+                            // For prediction cells, show that cell's token trajectory
+                            // Always show hover trajectory (gray line) even if token is pinned
+                            // This allows both row-based colored lines and cell-based gray lines to coexist
                             var li = cell.dataset.li ? parseInt(cell.dataset.li) : 0;
                             var cellData = widgetData.cells[pos][li] || widgetData.cells[pos][0];
-                            var isPinned = findGroupForToken(cellData.token) >= 0;
-                            var hoverTraj = isPinned ? null : cellData.trajectory;
-                            var hoverColor = isPinned ? null : "#999";
-                            var hoverLabel = isPinned ? null : cellData.token;
-                            drawAllTrajectories(hoverTraj, hoverColor, hoverLabel, chartInnerWidth, pos);
+                            drawAllTrajectories(cellData.trajectory, "#999", cellData.token, chartInnerWidth, pos);
                         }
                     });
 
@@ -888,7 +939,8 @@ var LogitLensWidget = (function() {
             }
 
             function closePopup() {
-                document.getElementById(uid + "_popup").classList.remove("visible");
+                var popup = document.getElementById(uid + "_popup");
+                if (popup) popup.classList.remove("visible");
                 document.querySelectorAll("#" + uid + " .pred-cell.selected").forEach(function(c) { c.classList.remove("selected"); });
                 openPopupCell = null;
             }
@@ -934,9 +986,8 @@ var LogitLensWidget = (function() {
                         document.querySelectorAll("#" + uid + "_popup_content .topk-item").forEach(function(it) { it.classList.remove("active"); });
                         item.classList.add("active");
                         var chartInnerWidth = updateChartDimensions();
-                        var isPinned = findGroupForToken(tokData.token) >= 0;
-                        var hoverTraj = isPinned ? null : tokData.trajectory;
-                        drawAllTrajectories(hoverTraj, "#999", tokData.token, chartInnerWidth, pos);
+                        // Always show hover trajectory even if token is pinned
+                        drawAllTrajectories(tokData.trajectory, "#999", tokData.token, chartInnerWidth, pos);
                     });
 
                     item.addEventListener("mouseleave", function() {
@@ -959,9 +1010,8 @@ var LogitLensWidget = (function() {
 
                 popup.classList.add("visible");
                 var chartInnerWidth = updateChartDimensions();
-                var isPinned = findGroupForToken(cellData.token) >= 0;
-                var hoverTraj = isPinned ? null : cellData.trajectory;
-                drawAllTrajectories(hoverTraj, "#999", cellData.token, chartInnerWidth, pos);
+                // Always show hover trajectory even if token is pinned
+                drawAllTrajectories(cellData.trajectory, "#999", cellData.token, chartInnerWidth, pos);
             }
 
             function togglePinnedTrajectory(token, addToGroup) {
@@ -1033,6 +1083,18 @@ var LogitLensWidget = (function() {
                 var xAxisGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 xAxisGroup.style.cursor = "row-resize";
 
+                // Add hover background for x-axis (hidden by default)
+                var xAxisHoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                xAxisHoverBg.setAttribute("x", 0); xAxisHoverBg.setAttribute("y", chartInnerHeight - 4);
+                xAxisHoverBg.setAttribute("width", chartInnerWidth); xAxisHoverBg.setAttribute("height", 8);
+                xAxisHoverBg.setAttribute("rx", 2);
+                xAxisHoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.2)");
+                xAxisHoverBg.setAttribute("stroke", "rgba(33, 150, 243, 0.5)");
+                xAxisHoverBg.setAttribute("stroke-width", "1");
+                xAxisHoverBg.style.display = "none";
+                xAxisHoverBg.classList.add("xaxis-hover-bg");
+                xAxisGroup.appendChild(xAxisHoverBg);
+
                 // Invisible wider hit target for easier dragging
                 var xAxisHitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 xAxisHitTarget.setAttribute("x", 0); xAxisHitTarget.setAttribute("y", chartInnerHeight - 4);
@@ -1047,6 +1109,12 @@ var LogitLensWidget = (function() {
                 xAxisGroup.appendChild(xAxis);
                 g.appendChild(xAxisGroup);
 
+                xAxisGroup.addEventListener("mouseenter", function() {
+                    xAxisHoverBg.style.display = "block";
+                });
+                xAxisGroup.addEventListener("mouseleave", function() {
+                    xAxisHoverBg.style.display = "none";
+                });
                 xAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
                     xAxisDrag = { active: true, startY: e.clientY, startHeight: chartHeight };
@@ -1058,16 +1126,39 @@ var LogitLensWidget = (function() {
                 var dotRadius = 3;
                 var labelMargin = chartMargin.right;
                 var usableWidth = chartInnerWidth - labelMargin;
+
+                // X-axis scaling: maps layers to x positions, accounting for plotMinLayer zoom
+                // Layer plotMinLayer maps to x=dotRadius (left edge)
+                // Layer (nLayers-1) maps to x=usableWidth-dotRadius (right edge)
                 function layerToXForLabels(layerIdx) {
                     if (nLayers <= 1) return usableWidth / 2;
-                    return dotRadius + (layerIdx / (nLayers - 1)) * (usableWidth - 2 * dotRadius);
+                    var visibleLayerRange = (nLayers - 1) - plotMinLayer;
+                    if (visibleLayerRange <= 0) return usableWidth / 2;
+                    return dotRadius + ((layerIdx - plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
                 }
+
+                // Add clip-path to clip trajectories at left edge when zoomed
+                var clipId = uid + "_chart_clip";
+                var defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+                var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+                clipPath.setAttribute("id", clipId);
+                var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                clipRect.setAttribute("x", "0");
+                clipRect.setAttribute("y", "-5");
+                clipRect.setAttribute("width", chartInnerWidth);
+                clipRect.setAttribute("height", chartInnerHeight + 30);
+                clipPath.appendChild(clipRect);
+                defs.appendChild(clipPath);
+                svg.appendChild(defs);
+
+                // Apply clip-path to the main chart group
+                g.setAttribute("clip-path", "url(#" + clipId + ")")
 
                 var minLabelSpacing = 25;
                 var totalLabelsWidth = currentVisibleIndices.length * minLabelSpacing;
                 var labelStride = 1;
-                if (totalLabelsWidth > usableWidth) {
-                    labelStride = Math.ceil(totalLabelsWidth / usableWidth);
+                if (usableWidth > 0 && totalLabelsWidth > usableWidth) {
+                    labelStride = Math.max(1, Math.ceil(totalLabelsWidth / usableWidth));
                 }
 
                 var lastIdx = currentVisibleIndices.length - 1;
@@ -1085,9 +1176,33 @@ var LogitLensWidget = (function() {
                     }
                 }
 
+                // X-axis tick labels (all except last are draggable for x-zoom)
+                var isLastVisibleIndex = currentVisibleIndices.length - 1;
                 currentVisibleIndices.forEach(function(layerIdx, i) {
                     if (showAtIndex.has(i)) {
                         var x = layerToXForLabels(layerIdx);
+                        var isLast = (i === isLastVisibleIndex);
+                        var isDraggable = !isLast && layerIdx > 0;
+
+                        // Create a group for the tick label (for hover effects)
+                        var tickGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+                        // Add hover highlight background (hidden by default)
+                        if (isDraggable) {
+                            var hoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                            hoverBg.setAttribute("x", x - 12);
+                            hoverBg.setAttribute("y", chartInnerHeight + 2);
+                            hoverBg.setAttribute("width", 24);
+                            hoverBg.setAttribute("height", 14);
+                            hoverBg.setAttribute("rx", 2);
+                            hoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.2)");
+                            hoverBg.setAttribute("stroke", "rgba(33, 150, 243, 0.5)");
+                            hoverBg.setAttribute("stroke-width", "1");
+                            hoverBg.style.display = "none";
+                            hoverBg.classList.add("tick-hover-bg");
+                            tickGroup.appendChild(hoverBg);
+                        }
+
                         var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         label.setAttribute("x", x);
                         label.setAttribute("y", chartInnerHeight + 12);
@@ -1095,12 +1210,55 @@ var LogitLensWidget = (function() {
                         label.setAttribute("font-size", "9");
                         label.setAttribute("fill", "#666");
                         label.textContent = widgetData.layers[layerIdx];
-                        g.appendChild(label);
+                        tickGroup.appendChild(label);
+
+                        if (isDraggable) {
+                            tickGroup.style.cursor = "col-resize";
+                            tickGroup.dataset.layerIdx = layerIdx;
+
+                            tickGroup.addEventListener("mouseenter", function() {
+                                var bg = tickGroup.querySelector(".tick-hover-bg");
+                                if (bg) bg.style.display = "block";
+                            });
+                            tickGroup.addEventListener("mouseleave", function() {
+                                var bg = tickGroup.querySelector(".tick-hover-bg");
+                                if (bg) bg.style.display = "none";
+                            });
+                            tickGroup.addEventListener("mousedown", function(e) {
+                                closePopup();
+                                var layerIdxDragged = parseInt(tickGroup.dataset.layerIdx);
+                                plotMinLayerDrag = {
+                                    active: true,
+                                    startX: e.clientX,
+                                    startMinLayer: plotMinLayer,
+                                    layerIdx: layerIdxDragged,
+                                    layerXAtStart: layerToXForLabels(layerIdxDragged),
+                                    usableWidth: usableWidth,
+                                    dotRadius: dotRadius
+                                };
+                                e.preventDefault();
+                                e.stopPropagation();
+                            });
+                        }
+
+                        g.appendChild(tickGroup);
                     }
                 });
 
                 var yAxisGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 yAxisGroup.style.cursor = "col-resize";
+
+                // Add hover background for y-axis (hidden by default)
+                var yAxisHoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                yAxisHoverBg.setAttribute("x", -4); yAxisHoverBg.setAttribute("y", 0);
+                yAxisHoverBg.setAttribute("width", 8); yAxisHoverBg.setAttribute("height", chartInnerHeight);
+                yAxisHoverBg.setAttribute("rx", 2);
+                yAxisHoverBg.setAttribute("fill", "rgba(76, 175, 80, 0.2)");
+                yAxisHoverBg.setAttribute("stroke", "rgba(76, 175, 80, 0.5)");
+                yAxisHoverBg.setAttribute("stroke-width", "1");
+                yAxisHoverBg.style.display = "none";
+                yAxisHoverBg.classList.add("yaxis-hover-bg");
+                yAxisGroup.appendChild(yAxisHoverBg);
 
                 var yAxisHitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 yAxisHitTarget.setAttribute("x", -4); yAxisHitTarget.setAttribute("y", 0);
@@ -1115,6 +1273,12 @@ var LogitLensWidget = (function() {
                 yAxisGroup.appendChild(yAxis);
                 g.appendChild(yAxisGroup);
 
+                yAxisGroup.addEventListener("mouseenter", function() {
+                    yAxisHoverBg.style.display = "block";
+                });
+                yAxisGroup.addEventListener("mouseleave", function() {
+                    yAxisHoverBg.style.display = "none";
+                });
                 yAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
                     yAxisDrag = { active: true, startX: e.clientX, startWidth: inputTokenWidth };
@@ -1411,7 +1575,9 @@ var LogitLensWidget = (function() {
                 var usableWidth = chartInnerWidth - labelMargin;
                 function layerToX(layerIdx) {
                     if (nLayers <= 1) return usableWidth / 2;
-                    return dotRadius + (layerIdx / (nLayers - 1)) * (usableWidth - 2 * dotRadius);
+                    var visibleLayerRange = (nLayers - 1) - plotMinLayer;
+                    if (visibleLayerRange <= 0) return usableWidth / 2;
+                    return dotRadius + ((layerIdx - plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
                 }
 
                 var pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1457,11 +1623,16 @@ var LogitLensWidget = (function() {
 
             // Global event listeners
             document.addEventListener("click", function(e) {
+                // Check if widget still exists (may have been removed)
+                var container = document.getElementById(uid);
+                if (!container) return;
+
                 if (!e.target.closest("#" + uid + " .popup") && !e.target.closest("#" + uid + " .pred-cell")) {
                     closePopup();
                 }
-                if (!e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
-                    document.getElementById(uid + "_color_menu").classList.remove("visible");
+                var colorMenu = document.getElementById(uid + "_color_menu");
+                if (colorMenu && !e.target.closest("#" + uid + " .color-mode-btn") && !e.target.closest("#" + uid + "_color_menu")) {
+                    colorMenu.classList.remove("visible");
                 }
             });
 
@@ -1574,7 +1745,7 @@ var LogitLensWidget = (function() {
                         if (Math.abs(newCellWidth - currentCellWidth) > threshold) {
                             currentCellWidth = newCellWidth;
                             var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                            buildTable(currentCellWidth, result.indices, currentMaxRows);
+                            buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
                             notifyLinkedWidgets();
                         }
                     }
@@ -1591,7 +1762,7 @@ var LogitLensWidget = (function() {
 
                     // Rebuild table with constraint (may introduce strides), keep column width unchanged
                     var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows);
+                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
                     notifyLinkedWidgets();
                 }
             });
@@ -1627,7 +1798,7 @@ var LogitLensWidget = (function() {
 
                 if (changed) {
                     var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows);
+                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
 
                     // Sync to linked widgets if this wasn't triggered by a sync
                     if (!fromSync) {
@@ -1656,6 +1827,7 @@ var LogitLensWidget = (function() {
                     cellWidth: currentCellWidth,
                     maxRows: currentMaxRows,
                     maxTableWidth: maxTableWidth,
+                    plotMinLayer: plotMinLayer,
                     colorMode: colorMode,
                     title: customTitle,
                     colorIndex: colorIndex,
@@ -1670,7 +1842,7 @@ var LogitLensWidget = (function() {
             // Initial build with container width
             var containerWidth = getContainerWidth();
             var result = computeVisibleLayers(currentCellWidth, containerWidth);
-            buildTable(currentCellWidth, result.indices, currentMaxRows);
+            buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
 
             // Apply restored chart height to SVG element
             var svg = document.getElementById(uid + "_chart");

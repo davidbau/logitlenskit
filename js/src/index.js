@@ -5,10 +5,5 @@
  * See https://davidbau.github.io/logitlenskit/ for live demo.
  */
 
-// Import the widget (for bundler use)
+// Entry point for bundled builds - includes the widget code
 // The widget is also available as a global when loaded via script tag
-
-// Re-export for module use
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { LogitLensWidget };
-}
