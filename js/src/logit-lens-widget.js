@@ -105,11 +105,12 @@ var LogitLensWidget = (function() {
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 200; min-width: 150px;
             }
             #${uid} .color-menu.visible { display: block; }
-            #${uid} .color-menu-item { padding: 8px 12px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: space-between; }
-            #${uid} .color-menu-item:hover { background: #f0f0f0; }
-            #${uid} .color-menu-item .color-swatch { width: 16px; height: 16px; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; margin-left: 8px; opacity: 0; transition: opacity 0.15s; }
-            #${uid} .color-menu-item:hover .color-swatch { opacity: 1; }
-            #${uid} .color-menu-item .color-swatch:hover { border-color: #666; }
+            #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: 12px; display: flex; align-items: stretch; }
+            #${uid} .color-menu-item:hover, #${uid} .color-menu-item.picking { background: #f0f0f0; }
+            #${uid} .color-menu-item .color-menu-label { padding: 8px 12px; flex: 1; }
+            #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: none; border-left: 1px solid #ccc; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+            #${uid} .color-menu-item:hover .color-swatch, #${uid} .color-menu-item.picking .color-swatch { opacity: 1; }
+            #${uid} .color-menu-item .color-swatch:hover { border-left-color: #666; }
             #${uid} .legend-close { cursor: pointer; }
             #${uid} .legend-close:hover { fill: #e91e63 !important; }
         `;
@@ -738,7 +739,7 @@ var LogitLensWidget = (function() {
                 });
 
                 // "None" item - no color swatch
-                html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 8px;"><span class="color-menu-label">None</span></div>';
+                html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px;"><span class="color-menu-label">None</span></div>';
 
                 menu.innerHTML = html;
                 menu.classList.add("visible");
@@ -759,9 +760,12 @@ var LogitLensWidget = (function() {
                 menu.querySelectorAll(".color-swatch").forEach(function(swatch) {
                     var idx = parseInt(swatch.dataset.idx);
                     var itemData = menuItems[idx];
+                    var menuItem = swatch.closest(".color-menu-item");
 
                     swatch.addEventListener("click", function(ev) {
                         ev.stopPropagation();
+                        // Add picking class to keep item active while picker is open
+                        if (menuItem) menuItem.classList.add("picking");
                     });
 
                     swatch.addEventListener("input", function(ev) {
@@ -773,10 +777,18 @@ var LogitLensWidget = (function() {
                         } else if (itemData.colorType === "trajectory" && itemData.groupIdx !== null) {
                             pinnedGroups[itemData.groupIdx].color = newColor;
                             // Update the border color on the menu item
-                            var menuItem = swatch.closest(".color-menu-item");
                             if (menuItem) menuItem.style.borderLeftColor = newColor;
                         }
                         buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                    });
+
+                    // Remove picking class when color picker closes
+                    swatch.addEventListener("change", function(ev) {
+                        if (menuItem) menuItem.classList.remove("picking");
+                    });
+
+                    swatch.addEventListener("blur", function(ev) {
+                        if (menuItem) menuItem.classList.remove("picking");
                     });
                 });
             }
