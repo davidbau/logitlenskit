@@ -464,8 +464,8 @@ var LogitLensWidget = (function() {
 
                 var halfwayCol = Math.floor(visibleLayerIndices.length / 2);
 
-                // Get base color for heatmap (if colorMode is a pinned token, or custom heatmap color)
-                var colorModeBaseColor = colorMode !== "top" ? getColorForToken(colorMode) : heatmapBaseColor;
+                // Get base color for heatmap (use pinned group color if available, otherwise heatmapBaseColor)
+                var colorModeBaseColor = (colorMode !== "top" && getColorForToken(colorMode)) || heatmapBaseColor;
 
                 visiblePositions.forEach(function(pos, rowIdx) {
                     var tok = widgetData.tokens[pos];
