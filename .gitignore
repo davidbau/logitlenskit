@@ -1,0 +1,33 @@
+# Python
+python/.venv/
+python/*.egg-info/
+python/src/*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# JavaScript
+js/node_modules/
+js/coverage/
+js/dist/*.js
+!js/dist/.gitkeep
+
+# Environment
+.env.local
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/

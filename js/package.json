@@ -1,0 +1,37 @@
+{
+  "name": "logit-lens-widget",
+  "version": "0.1.0",
+  "description": "Interactive logit lens visualization widget for transformer models",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest tests/unit/",
+    "test:integration": "jest tests/integration/ --runInBand",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch",
+    "build": "esbuild src/index.js --bundle --minify --outfile=dist/logit-lens-widget.min.js",
+    "lint": "eslint src/ tests/"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": ["src/**/*.js"],
+    "coverageThreshold": {
+      "global": {
+        "statements": 80,
+        "branches": 70,
+        "functions": 80,
+        "lines": 80
+      }
+    }
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "esbuild": "^0.19.0",
+    "eslint": "^8.50.0"
+  },
+  "license": "MIT"
+}
