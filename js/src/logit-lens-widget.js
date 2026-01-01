@@ -468,9 +468,9 @@ var LogitLensWidget = (function() {
                 // Get base color for heatmap:
                 // - "top" mode uses heatmapBaseColor (default purple #8844ff)
                 // - pinned token uses its group color
-                // - non-pinned specific token uses heatmapNextColor (default orange #ff8844)
+                // - non-pinned specific token uses heatmapNextColor (default burnt orange #cc6622)
                 var defaultBaseColor = "#8844ff";
-                var defaultNextColor = "#ff8844";
+                var defaultNextColor = "#cc6622";
                 var colorModeBaseColor = colorMode === "top"
                     ? (heatmapBaseColor || defaultBaseColor)
                     : (getColorForToken(colorMode) || heatmapNextColor || defaultNextColor);
@@ -716,7 +716,7 @@ var LogitLensWidget = (function() {
                     menuItems.push({
                         mode: topToken,
                         label: topToken,
-                        color: heatmapNextColor || "#ff8844",
+                        color: heatmapNextColor || "#cc6622",
                         colorType: "heatmapNext",
                         groupIdx: null
                     });
