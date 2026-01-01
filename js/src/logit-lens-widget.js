@@ -105,8 +105,11 @@ var LogitLensWidget = (function() {
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 200; min-width: 150px;
             }
             #${uid} .color-menu.visible { display: block; }
-            #${uid} .color-menu-item { padding: 8px 12px; cursor: pointer; font-size: 12px; }
+            #${uid} .color-menu-item { padding: 8px 12px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: space-between; }
             #${uid} .color-menu-item:hover { background: #f0f0f0; }
+            #${uid} .color-menu-item .color-swatch { width: 16px; height: 16px; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; margin-left: 8px; opacity: 0; transition: opacity 0.15s; }
+            #${uid} .color-menu-item:hover .color-swatch { opacity: 1; }
+            #${uid} .color-menu-item .color-swatch:hover { border-color: #666; }
             #${uid} .legend-close { cursor: pointer; }
             #${uid} .legend-close:hover { fill: #e91e63 !important; }
         `;
@@ -687,28 +690,92 @@ var LogitLensWidget = (function() {
                 var lastLayerIdx = currentVisibleIndices[currentVisibleIndices.length - 1];
                 var topToken = widgetData.cells[lastPos][lastLayerIdx].token;
 
-                var html = '<div class="color-menu-item" data-mode="top">top prediction</div>';
+                // Build menu items with color swatches
+                var menuItems = [];
 
-                if (findGroupForToken(topToken) < 0) {
-                    html += '<div class="color-menu-item" data-mode="' + escapeHtml(topToken) + '">' + escapeHtml(topToken) + '</div>';
-                }
-
-                pinnedGroups.forEach(function(group) {
-                    var label = getGroupLabel(group);
-                    var modeToken = group.tokens[0];
-                    html += '<div class="color-menu-item" data-mode="' + escapeHtml(modeToken) + '" style="border-left: 3px solid ' + group.color + ';">' + escapeHtml(label) + '</div>';
+                // "top prediction" - uses heatmapBaseColor
+                menuItems.push({
+                    mode: "top",
+                    label: "top prediction",
+                    color: heatmapBaseColor || "#4488ff",
+                    colorType: "heatmap",
+                    groupIdx: null
                 });
 
-                html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 8px;">None</div>';
+                // Specific top token (if not pinned) - also uses heatmapBaseColor
+                if (findGroupForToken(topToken) < 0) {
+                    menuItems.push({
+                        mode: topToken,
+                        label: topToken,
+                        color: heatmapBaseColor || "#4488ff",
+                        colorType: "heatmap",
+                        groupIdx: null
+                    });
+                }
+
+                // Pinned groups - each uses its own color
+                pinnedGroups.forEach(function(group, idx) {
+                    var label = getGroupLabel(group);
+                    var modeToken = group.tokens[0];
+                    menuItems.push({
+                        mode: modeToken,
+                        label: label,
+                        color: group.color,
+                        colorType: "trajectory",
+                        groupIdx: idx,
+                        borderColor: group.color
+                    });
+                });
+
+                // Build HTML
+                var html = "";
+                menuItems.forEach(function(item, idx) {
+                    var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
+                    html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
+                    html += '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
+                    html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '">';
+                    html += '</div>';
+                });
+
+                // "None" item - no color swatch
+                html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 8px;"><span class="color-menu-label">None</span></div>';
 
                 menu.innerHTML = html;
                 menu.classList.add("visible");
 
+                // Add click handlers for menu items (selects color mode)
                 menu.querySelectorAll(".color-menu-item").forEach(function(item) {
                     item.addEventListener("click", function(ev) {
+                        // Don't close menu if clicking on color swatch
+                        if (ev.target.classList.contains("color-swatch")) return;
                         ev.stopPropagation();
                         colorMode = item.dataset.mode;
                         menu.classList.remove("visible");
+                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                    });
+                });
+
+                // Add handlers for color swatches
+                menu.querySelectorAll(".color-swatch").forEach(function(swatch) {
+                    var idx = parseInt(swatch.dataset.idx);
+                    var itemData = menuItems[idx];
+
+                    swatch.addEventListener("click", function(ev) {
+                        ev.stopPropagation();
+                    });
+
+                    swatch.addEventListener("input", function(ev) {
+                        ev.stopPropagation();
+                        var newColor = swatch.value;
+
+                        if (itemData.colorType === "heatmap") {
+                            heatmapBaseColor = newColor;
+                        } else if (itemData.colorType === "trajectory" && itemData.groupIdx !== null) {
+                            pinnedGroups[itemData.groupIdx].color = newColor;
+                            // Update the border color on the menu item
+                            var menuItem = swatch.closest(".color-menu-item");
+                            if (menuItem) menuItem.style.borderLeftColor = newColor;
+                        }
                         buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
                     });
                 });
