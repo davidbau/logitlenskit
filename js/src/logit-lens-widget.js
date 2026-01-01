@@ -107,7 +107,7 @@ var LogitLensWidget = (function() {
             #${uid} .color-menu.visible { display: block; }
             #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: 12px; display: flex; align-items: stretch; }
             #${uid} .color-menu-item:hover, #${uid} .color-menu-item.picking { background: #f0f0f0; }
-            #${uid} .color-menu-item .color-menu-label { padding: 8px 12px; flex: 1; }
+            #${uid} .color-menu-item .color-menu-label { padding: 8px 12px 8px 0; flex: 1; }
             #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: 0; border-left: 1px solid #ccc; background: transparent; cursor: pointer; opacity: 0; transition: opacity 0.15s; padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
             #${uid} .color-menu-item:hover .color-swatch, #${uid} .color-menu-item.picking .color-swatch { opacity: 1; }
             #${uid} .color-menu-item .color-swatch:hover { border-left-color: #666; }
@@ -793,7 +793,7 @@ var LogitLensWidget = (function() {
                 menuItems.forEach(function(item, idx) {
                     var isActive = colorModes.indexOf(item.mode) >= 0;
                     var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
-                    var checkmark = isActive ? '<span style="margin-right: 8px; font-weight: bold;">✓</span>' : '<span style="margin-right: 8px; visibility: hidden;">✓</span>';
+                    var checkmark = isActive ? '<span style="padding-left: 12px; margin-right: 8px; font-weight: bold;">✓</span>' : '<span style="padding-left: 12px; margin-right: 8px; visibility: hidden;">✓</span>';
                     html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
                     html += checkmark + '<span class="color-menu-label">' + escapeHtml(item.label) + '</span>';
                     html += '<input type="color" class="color-swatch" value="' + item.color + '" data-idx="' + idx + '" style="border:0;background:transparent;padding:0;">';
@@ -802,7 +802,7 @@ var LogitLensWidget = (function() {
 
                 // "None" item - no color swatch, but has invisible checkmark for alignment
                 var noneActive = colorModes.length === 0;
-                var noneCheckmark = noneActive ? '<span style="margin-right: 8px; font-weight: bold;">✓</span>' : '<span style="margin-right: 8px; visibility: hidden;">✓</span>';
+                var noneCheckmark = noneActive ? '<span style="padding-left: 12px; margin-right: 8px; font-weight: bold;">✓</span>' : '<span style="padding-left: 12px; margin-right: 8px; visibility: hidden;">✓</span>';
                 html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px;">' + noneCheckmark + '<span class="color-menu-label">None</span></div>';
 
                 menu.innerHTML = html;
