@@ -1085,12 +1085,9 @@ var LogitLensWidget = (function() {
 
                 // Add hover background for x-axis (hidden by default)
                 var xAxisHoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                xAxisHoverBg.setAttribute("x", 0); xAxisHoverBg.setAttribute("y", chartInnerHeight - 4);
-                xAxisHoverBg.setAttribute("width", chartInnerWidth); xAxisHoverBg.setAttribute("height", 8);
-                xAxisHoverBg.setAttribute("rx", 2);
-                xAxisHoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.2)");
-                xAxisHoverBg.setAttribute("stroke", "rgba(33, 150, 243, 0.5)");
-                xAxisHoverBg.setAttribute("stroke-width", "1");
+                xAxisHoverBg.setAttribute("x", 0); xAxisHoverBg.setAttribute("y", chartInnerHeight - 2);
+                xAxisHoverBg.setAttribute("width", chartInnerWidth); xAxisHoverBg.setAttribute("height", 4);
+                xAxisHoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.3)");
                 xAxisHoverBg.style.display = "none";
                 xAxisHoverBg.classList.add("xaxis-hover-bg");
                 xAxisGroup.appendChild(xAxisHoverBg);
@@ -1138,14 +1135,15 @@ var LogitLensWidget = (function() {
                 }
 
                 // Add clip-path to clip trajectories at left edge when zoomed
+                // Extend left to include y-axis tick label (at x=-5)
                 var clipId = uid + "_chart_clip";
                 var defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
                 var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                 clipPath.setAttribute("id", clipId);
                 var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                clipRect.setAttribute("x", "0");
+                clipRect.setAttribute("x", "-35");
                 clipRect.setAttribute("y", "-5");
-                clipRect.setAttribute("width", chartInnerWidth);
+                clipRect.setAttribute("width", chartInnerWidth + 35);
                 clipRect.setAttribute("height", chartInnerHeight + 30);
                 clipPath.appendChild(clipRect);
                 defs.appendChild(clipPath);
@@ -1188,16 +1186,15 @@ var LogitLensWidget = (function() {
                         var tickGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
                         // Add hover highlight background (hidden by default)
+                        // Size to fit tick label text plus small padding
                         if (isDraggable) {
                             var hoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                            hoverBg.setAttribute("x", x - 12);
-                            hoverBg.setAttribute("y", chartInnerHeight + 2);
-                            hoverBg.setAttribute("width", 24);
-                            hoverBg.setAttribute("height", 14);
+                            hoverBg.setAttribute("x", x - 8);
+                            hoverBg.setAttribute("y", chartInnerHeight + 3);
+                            hoverBg.setAttribute("width", 16);
+                            hoverBg.setAttribute("height", 11);
                             hoverBg.setAttribute("rx", 2);
-                            hoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.2)");
-                            hoverBg.setAttribute("stroke", "rgba(33, 150, 243, 0.5)");
-                            hoverBg.setAttribute("stroke-width", "1");
+                            hoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.3)");
                             hoverBg.style.display = "none";
                             hoverBg.classList.add("tick-hover-bg");
                             tickGroup.appendChild(hoverBg);
@@ -1250,12 +1247,9 @@ var LogitLensWidget = (function() {
 
                 // Add hover background for y-axis (hidden by default)
                 var yAxisHoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                yAxisHoverBg.setAttribute("x", -4); yAxisHoverBg.setAttribute("y", 0);
-                yAxisHoverBg.setAttribute("width", 8); yAxisHoverBg.setAttribute("height", chartInnerHeight);
-                yAxisHoverBg.setAttribute("rx", 2);
-                yAxisHoverBg.setAttribute("fill", "rgba(76, 175, 80, 0.2)");
-                yAxisHoverBg.setAttribute("stroke", "rgba(76, 175, 80, 0.5)");
-                yAxisHoverBg.setAttribute("stroke-width", "1");
+                yAxisHoverBg.setAttribute("x", -2); yAxisHoverBg.setAttribute("y", 0);
+                yAxisHoverBg.setAttribute("width", 4); yAxisHoverBg.setAttribute("height", chartInnerHeight);
+                yAxisHoverBg.setAttribute("fill", "rgba(76, 175, 80, 0.3)");
                 yAxisHoverBg.style.display = "none";
                 yAxisHoverBg.classList.add("yaxis-hover-bg");
                 yAxisGroup.appendChild(yAxisHoverBg);
