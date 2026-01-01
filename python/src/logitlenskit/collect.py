@@ -13,7 +13,7 @@ top-k and trajectory extraction on the server, we reduce this to ~400KB.
 import torch
 from typing import List, Dict, Optional
 
-from .models import get_model_config, resolve_accessor, apply_module_or_callable
+from .models import get_model_config, resolve_accessor
 from .utils import get_value
 
 
@@ -68,14 +68,18 @@ def collect_logit_lens_topk(
     token_strs = [model.tokenizer.decode([t]) for t in token_ids]
     seq_len = len(token_ids)
 
+    # Resolve modules BEFORE trace context (can't serialize our helper functions)
+    norm_module = resolve_accessor(model, cfg["norm"])
+    lm_head_module = resolve_accessor(model, cfg["lm_head"])
+
     # Collect logits at all layers - use list.save()
     saved_logits = None
     with model.trace(prompt, remote=remote):
         logits_list = []
         for layer_idx in layers:
             hidden = model_layers[layer_idx].output[0]
-            normed = apply_module_or_callable(model, cfg["norm"], hidden)
-            logits = apply_module_or_callable(model, cfg["lm_head"], normed)
+            normed = norm_module(hidden)
+            logits = lm_head_module(normed)
             # Remove batch dim if present: [seq_len, vocab]
             seq_logits = logits[0] if len(logits.shape) == 3 else logits
             logits_list.append(seq_logits)
@@ -201,6 +205,10 @@ def collect_logit_lens_topk_efficient(
     token_ids = model.tokenizer.encode(prompt)
     token_strs = [model.tokenizer.decode([t]) for t in token_ids]
 
+    # Resolve modules BEFORE trace context (can't serialize our helper functions)
+    norm_module = resolve_accessor(model, cfg["norm"])
+    lm_head_module = resolve_accessor(model, cfg["lm_head"])
+
     if not track_across_layers:
         # Simple mode: just get top-k at each layer
         saved_data = None
@@ -208,8 +216,8 @@ def collect_logit_lens_topk_efficient(
             results = []
             for layer_idx in layers:
                 hidden = model_layers[layer_idx].output[0]
-                normed = apply_module_or_callable(model, cfg["norm"], hidden)
-                logits = apply_module_or_callable(model, cfg["lm_head"], normed)
+                normed = norm_module(hidden)
+                logits = lm_head_module(normed)
                 seq_logits = logits[0] if len(logits.shape) == 3 else logits
                 probs = torch.softmax(seq_logits, dim=-1)
                 top_probs, top_indices = probs.topk(top_k, dim=-1)
@@ -246,8 +254,8 @@ def collect_logit_lens_topk_efficient(
 
         for layer_idx in layers:
             hidden = model_layers[layer_idx].output[0]
-            normed = apply_module_or_callable(model, cfg["norm"], hidden)
-            logits = apply_module_or_callable(model, cfg["lm_head"], normed)
+            normed = norm_module(hidden)
+            logits = lm_head_module(normed)
             seq_logits = logits[0] if len(logits.shape) == 3 else logits
             probs = torch.softmax(seq_logits, dim=-1)
             top_p, top_i = probs.topk(top_k, dim=-1)

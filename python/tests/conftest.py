@@ -17,7 +17,7 @@ def pytest_configure(config):
 @pytest.fixture(scope="session")
 def env_file():
     """Load environment variables from .env.local if present."""
-    env_path = Path(__file__).parent.parent.parent.parent / ".env.local"
+    env_path = Path(__file__).parent.parent.parent / ".env.local"
     if env_path.exists():
         with open(env_path) as f:
             for line in f:
