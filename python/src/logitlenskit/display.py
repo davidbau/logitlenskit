@@ -5,97 +5,73 @@ Provides zero-install HTML output - no ipywidgets required.
 """
 
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from IPython.display import HTML, display
 
 
 # The LogitLensWidget JavaScript code will be embedded here
-# For now, we reference it from a CDN or inline it
 _WIDGET_JS_URL = "https://davidbau.github.io/logitlenskit/js/dist/logit-lens-widget.min.js"
 
 
-def format_data_for_widget(
-    data: Dict,
-    tokenizer,
-    model_name: Optional[str] = None,
-) -> Dict:
+def to_js_format(data: Dict) -> Dict:
     """
-    Convert raw collection data to widget-compatible JSON format.
+    Convert Python API format to JavaScript V2 format.
 
     Args:
-        data: Raw data from collect_logit_lens_topk_efficient
-        tokenizer: Model tokenizer for decoding token indices
-        model_name: Optional model name for metadata
+        data: Dict from collect_logit_lens() with keys:
+            model, input, layers, topk, tracked, probs, vocab
 
     Returns:
-        Dict in the compact format expected by LogitLensWidget:
-        {
-            "meta": { "model": "...", "timestamp": "...", "version": 2 },
-            "layers": [0, 4, 8, ...],
-            "input": ["The", " quick", ...],
-            "tracked": [
-                { "fox": [0.01, 0.1, ...], "dog": [...] },  # position 0
-                { ... },  # position 1
-                ...
-            ],
-            "topk": [
-                [["fox", "dog"], ["the", "a"], ...],  # layer 0
-                ...
-            ]
-        }
+        Dict in JavaScript V2 format with keys:
+            meta, input, layers, topk, tracked
+
+    Example:
+        >>> js_data = to_js_format(data)
+        >>> json.dumps(js_data)  # Ready for JavaScript
     """
-    from datetime import datetime, timezone
-
+    vocab = data["vocab"]
     n_layers = len(data["layers"])
-    n_positions = len(data["tokens"])
+    n_pos = len(data["input"])
 
-    # Build metadata
-    meta = {
-        "version": 2,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    if model_name:
-        meta["model"] = model_name
+    # topk: [n_layers, n_pos, k] indices -> [n_layers][n_pos] string lists
+    topk_js = [
+        [[vocab[idx.item()] for idx in data["topk"][li, pos]]
+         for pos in range(n_pos)]
+        for li in range(n_layers)
+    ]
 
-    # Build tracked tokens per position: { tokenString: trajectory }
-    tracked = []
-    for pos in range(n_positions):
-        tracked_idx_list = data["tracked_indices"][pos].tolist()
-        tracked_probs_matrix = data["tracked_probs"][pos]
-
-        pos_tracked = {}
-        for ti, tok_idx in enumerate(tracked_idx_list):
-            tok_str = tokenizer.decode([tok_idx])
-            trajectory = tracked_probs_matrix[:, ti].tolist()
-            pos_tracked[tok_str] = [round(p, 5) for p in trajectory]
-
-        tracked.append(pos_tracked)
-
-    # Build topk: [n_layers][n_positions] -> list of token strings
-    topk = []
-    for li in range(n_layers):
-        layer_topk = []
-        for pos in range(n_positions):
-            top_indices = data["top_indices"][li, pos]
-            pos_topk = [tokenizer.decode([idx.item()]) for idx in top_indices]
-            layer_topk.append(pos_topk)
-        topk.append(layer_topk)
+    # tracked/probs: parallel arrays -> {token: trajectory} dicts per position
+    tracked_js = [
+        {
+            vocab[idx.item()]: [round(p, 5) for p in data["probs"][pos][:, i].tolist()]
+            for i, idx in enumerate(data["tracked"][pos])
+        }
+        for pos in range(n_pos)
+    ]
 
     return {
-        "meta": meta,
+        "meta": {"version": 2, "model": data["model"]},
+        "input": data["input"],
         "layers": data["layers"],
-        "input": data["tokens"],
-        "tracked": tracked,
-        "topk": topk,
+        "topk": topk_js,
+        "tracked": tracked_js,
     }
+
+
+def _is_js_format(data: Dict) -> bool:
+    """Check if data is already in JavaScript V2 format."""
+    return "meta" in data and "tracked" in data and isinstance(data["tracked"][0], dict)
+
+
+def _is_python_format(data: Dict) -> bool:
+    """Check if data is in Python API format."""
+    return "vocab" in data and "topk" in data and "probs" in data
 
 
 def show_logit_lens(
     data: Dict,
-    tokenizer,
     title: Optional[str] = None,
     container_id: Optional[str] = None,
-    model_name: Optional[str] = None,
 ) -> HTML:
     """
     Display interactive logit lens visualization in Jupyter.
@@ -104,26 +80,33 @@ def show_logit_lens(
     installation. The visualization is fully interactive.
 
     Args:
-        data: Data from collect_logit_lens_topk_efficient with track_across_layers=True
-        tokenizer: Model tokenizer for decoding token indices
+        data: Data from collect_logit_lens() (Python format) or
+              already converted to_js_format() (JavaScript V2 format)
         title: Optional title for the widget
         container_id: Optional container ID (auto-generated if not provided)
-        model_name: Optional model name for metadata
 
     Returns:
         IPython HTML object that displays the widget
 
     Example:
-        >>> data = collect_logit_lens_topk_efficient(prompt, model, track_across_layers=True)
-        >>> show_logit_lens(data, model.tokenizer, title="My Analysis")
+        >>> data = collect_logit_lens("The capital of France is", model)
+        >>> show_logit_lens(data, title="GPT-2 Analysis")
     """
     import uuid
 
     if container_id is None:
         container_id = f"logit-lens-{uuid.uuid4().hex[:8]}"
 
-    # Format data for widget
-    widget_data = format_data_for_widget(data, tokenizer, model_name=model_name)
+    # Convert to JS format if needed
+    if _is_python_format(data):
+        widget_data = to_js_format(data)
+    elif _is_js_format(data):
+        widget_data = data
+    else:
+        raise ValueError(
+            "Unrecognized data format. Expected output from collect_logit_lens() "
+            "or to_js_format()."
+        )
 
     # Build UI state
     ui_state = {}
@@ -159,9 +142,7 @@ def show_logit_lens(
 
 def display_logit_lens(
     data: Dict,
-    tokenizer,
     title: Optional[str] = None,
-    model_name: Optional[str] = None,
 ) -> None:
     """
     Display interactive logit lens visualization in Jupyter (convenience function).
@@ -169,9 +150,7 @@ def display_logit_lens(
     Same as show_logit_lens but calls display() automatically.
 
     Args:
-        data: Data from collect_logit_lens_topk_efficient with track_across_layers=True
-        tokenizer: Model tokenizer for decoding token indices
+        data: Data from collect_logit_lens() or to_js_format()
         title: Optional title for the widget
-        model_name: Optional model name for metadata
     """
-    display(show_logit_lens(data, tokenizer, title, model_name=model_name))
+    display(show_logit_lens(data, title))

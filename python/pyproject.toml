@@ -6,13 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "logitlenskit"
 version = "0.1.0"
 description = "Efficient logit lens data collection and visualization for transformers"
-readme = "../README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [{name = "David Bau"}]
 dependencies = [
     "torch>=2.0",
-    "nnsight>=0.2",
+    "nnterp>=0.1",
 ]
 
 [project.optional-dependencies]
