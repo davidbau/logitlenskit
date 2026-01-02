@@ -843,15 +843,6 @@ var LogitLensWidget = (function() {
                 });
             }
 
-            function getDefaultTitle() {
-                // Concatenated input tokens, omitting special tokens like <s>
-                var tokens = widgetData.tokens.slice();
-                if (tokens.length > 0 && /^<[^>]+>$/.test(tokens[0].trim())) {
-                    tokens = tokens.slice(1);
-                }
-                return tokens.join("");
-            }
-
             function updateTitle() {
                 var titleEl = document.getElementById(uid + "_title");
 
@@ -2197,15 +2188,6 @@ var LogitLensWidget = (function() {
             colorPicker.addEventListener("change", function() {
                 colorPickerTarget = null;
             });
-
-            // Helper to open color picker
-            function openColorPicker(x, y, currentColor, target) {
-                colorPickerTarget = target;
-                colorPicker.value = currentColor;
-                colorPicker.style.left = x + "px";
-                colorPicker.style.top = y + "px";
-                colorPicker.click();
-            }
 
             // Bottom resize handle for truncating rows
             (function() {
