@@ -188,8 +188,29 @@ var LogitLensWidget = (function() {
 
             var minChartHeight = 60;
             var maxChartHeight = 400;
-            var chartMargin = { top: 10, right: 8, bottom: 25, left: 10 };
-            function getChartInnerHeight() { return chartHeight - chartMargin.top - chartMargin.bottom; }
+            // Helper to get content font size in pixels (parses CSS variable)
+            function getContentFontSizePx() {
+                var widgetEl = document.getElementById(uid);
+                if (!widgetEl) return 10;
+                var style = getComputedStyle(widgetEl);
+                var sizeStr = style.getPropertyValue('--ll-content-size').trim() || '10px';
+                var match = sizeStr.match(/^([\d.]+)px$/);
+                return match ? parseFloat(match[1]) : 10;
+            }
+            // Dynamic margins that scale with font size
+            function getChartMargin() {
+                var fontSize = getContentFontSizePx();
+                return {
+                    top: Math.max(10, fontSize + 4),      // Space for y-axis top label
+                    right: 8,
+                    bottom: Math.max(25, fontSize + 8),   // Space for x-axis tick labels
+                    left: 10
+                };
+            }
+            function getChartInnerHeight() {
+                var m = getChartMargin();
+                return chartHeight - m.top - m.bottom;
+            }
             var minCellWidth = 10;
             var maxCellWidth = 200;
             var currentCellWidth = (uiState && uiState.cellWidth) || 44;
@@ -1451,6 +1472,7 @@ var LogitLensWidget = (function() {
                 legendG.setAttribute("class", "legend-area");
                 svg.appendChild(legendG);
 
+                var chartMargin = getChartMargin();
                 var chartInnerHeight = getChartInnerHeight();
 
                 var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -1597,12 +1619,15 @@ var LogitLensWidget = (function() {
 
                         // Add hover highlight background (hidden by default)
                         // Size to fit tick label text plus small padding
+                        var fontSize = getContentFontSizePx();
                         if (isDraggable) {
                             var hoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                            hoverBg.setAttribute("x", x - 8);
-                            hoverBg.setAttribute("y", chartInnerHeight + 3);
-                            hoverBg.setAttribute("width", 16);
-                            hoverBg.setAttribute("height", 11);
+                            var bgWidth = Math.max(16, fontSize * 1.6);
+                            var bgHeight = fontSize + 2;
+                            hoverBg.setAttribute("x", x - bgWidth / 2);
+                            hoverBg.setAttribute("y", chartInnerHeight + 2);
+                            hoverBg.setAttribute("width", bgWidth);
+                            hoverBg.setAttribute("height", bgHeight);
                             hoverBg.setAttribute("rx", 2);
                             hoverBg.setAttribute("fill", "rgba(33, 150, 243, 0.3)");
                             hoverBg.style.display = "none";
@@ -1612,7 +1637,7 @@ var LogitLensWidget = (function() {
 
                         var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         label.setAttribute("x", x);
-                        label.setAttribute("y", chartInnerHeight + 12);
+                        label.setAttribute("y", chartInnerHeight + 2 + fontSize);
                         label.setAttribute("text-anchor", "middle");
                         label.style.fontSize = "var(--ll-content-size, 10px)";
                         label.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
@@ -1750,8 +1775,11 @@ var LogitLensWidget = (function() {
                     tickLine.setAttribute("stroke", "#999");
                     g.appendChild(tickLine);
 
+                    // Position label so it's vertically centered on the tick (uses 0.9x font size)
+                    var tickFontSize = getContentFontSizePx() * 0.9;
                     var tickLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    tickLabel.setAttribute("x", -5); tickLabel.setAttribute("y", tickY + 3);
+                    tickLabel.setAttribute("x", -5);
+                    tickLabel.setAttribute("y", tickY + tickFontSize * 0.35);  // ~1/3 of font size below baseline
                     tickLabel.setAttribute("text-anchor", "end");
                     tickLabel.style.fontSize = "calc(var(--ll-content-size, 10px) * 0.9)";
                     tickLabel.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
@@ -1973,6 +2001,7 @@ var LogitLensWidget = (function() {
             function drawSingleTrajectory(g, trajectory, color, maxProb, label, isHover, chartInnerWidth, dashPattern) {
                 if (!trajectory || trajectory.length === 0) return;
 
+                var chartMargin = getChartMargin();
                 var chartInnerHeight = getChartInnerHeight();
                 var dotRadius = isHover ? 2 : 3;
                 var labelMargin = chartMargin.right;
