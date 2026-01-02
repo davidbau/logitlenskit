@@ -201,8 +201,8 @@ var LogitLensWidget = (function() {
             // Default chart height scales with row height (or font size as fallback)
             function getDefaultChartHeight() {
                 var fontSize = getContentFontSizePx();
-                var topMargin = Math.max(10, fontSize + 4);
-                var bottomMargin = Math.max(25, fontSize + 8);
+                var topMargin = Math.max(10, fontSize * 1.2);
+                var bottomMargin = Math.max(25, fontSize * 1.5);
                 // Try to measure actual row height from table
                 var table = document.getElementById(uid + "_table");
                 var rowHeight = fontSize * 2;  // fallback estimate
@@ -224,9 +224,9 @@ var LogitLensWidget = (function() {
             function getChartMargin() {
                 var fontSize = getContentFontSizePx();
                 return {
-                    top: Math.max(10, fontSize + 4),      // Space for y-axis top label
+                    top: Math.max(10, fontSize * 1.2),    // Space for y-axis top label (ascenders)
                     right: 8,
-                    bottom: Math.max(25, fontSize + 8),   // Space for x-axis tick labels
+                    bottom: Math.max(25, fontSize * 1.5), // Space for x-axis tick labels + descenders
                     left: 10
                 };
             }
@@ -1565,15 +1565,15 @@ var LogitLensWidget = (function() {
                 var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                 clipPath.setAttribute("id", clipId);
                 var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                // Left extent: room for "100.00%" label (~7 chars at 0.6em each) plus padding
+                // Left extent: room for "100.00%" label (~7 chars at 0.6em each) plus generous padding
                 var clipFontSize = getContentFontSizePx();
-                var clipLeftExtent = 10 + clipFontSize * 4;
-                // Top extent: room for tick label text above y=0
-                var clipTopExtent = clipFontSize;
+                var clipLeftExtent = 10 + clipFontSize * 5;
+                // Top extent: room for tick label ascenders above y=0
+                var clipTopExtent = clipFontSize * 1.2;
                 clipRect.setAttribute("x", -clipLeftExtent);
                 clipRect.setAttribute("y", -clipTopExtent);
                 clipRect.setAttribute("width", chartInnerWidth + clipLeftExtent);
-                clipRect.setAttribute("height", chartInnerHeight + clipTopExtent + chartMargin.bottom);
+                clipRect.setAttribute("height", chartInnerHeight + clipTopExtent + chartMargin.bottom + clipFontSize * 0.5);
                 clipPath.appendChild(clipRect);
                 defs.appendChild(clipPath);
                 svg.appendChild(defs);
