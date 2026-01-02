@@ -98,38 +98,36 @@
       width: 100%;
       height: 100%;
     }
-    /* Function nodes: circles */
+    /* Function nodes: circles - fill set dynamically by age */
     .node.function circle {
-      fill: #0f3460;
-      stroke: #e94560;
-      stroke-width: 2px;
+      stroke: #333;
+      stroke-width: 1.5px;
     }
     .node.function.new circle {
-      fill: #e94560;
       stroke: #fff;
+      stroke-width: 2.5px;
     }
     .node.function text {
       font-size: 9px;
       fill: #eee;
     }
-    /* State nodes: rectangles */
+    /* State nodes: rectangles - fill set dynamically by age */
     .node.state rect {
-      fill: #1a3a5c;
-      stroke: #4ecdc4;
-      stroke-width: 2px;
+      stroke: #333;
+      stroke-width: 1.5px;
       rx: 3;
       ry: 3;
     }
     .node.state.new rect {
-      fill: #4ecdc4;
       stroke: #fff;
+      stroke-width: 2.5px;
     }
     .node.state.const rect {
       stroke-dasharray: 4,2;
     }
     .node.state text {
       font-size: 9px;
-      fill: #4ecdc4;
+      fill: #eee;
     }
     /* Read edges: blue */
     .link.read {
@@ -257,6 +255,10 @@
         <div class="legend-item"><div class="legend-rect"></div> State Variable</div>
         <div class="legend-item"><div class="legend-line read"></div> Reads</div>
         <div class="legend-item"><div class="legend-line write"></div> Writes</div>
+        <div class="legend-item" style="margin-top:8px;font-size:0.85em;color:#888;">
+          <div style="width:60px;height:8px;background:linear-gradient(to right, #30123b, #7a0403, #ee6c2c, #f0f921);border-radius:2px;"></div>
+          <span style="margin-left:6px;">older → newer</span>
+        </div>
       </div>
     </div>
   </div>
@@ -284,6 +286,23 @@
     // Set timeline range
     timelineSlider.max = timeline.length - 1;
     timelineSlider.value = timeline.length - 1;
+
+    // Track when each node first appeared (for coloring by age)
+    const nodeFirstSeen = new Map();
+    timeline.forEach((snapshot, idx) => {
+      snapshot.nodes.forEach(node => {
+        if (!nodeFirstSeen.has(node.id)) {
+          nodeFirstSeen.set(node.id, idx);
+        }
+      });
+    });
+
+    // Attach firstSeen to all nodes in all snapshots
+    timeline.forEach(snapshot => {
+      snapshot.nodes.forEach(node => {
+        node.firstSeen = nodeFirstSeen.get(node.id);
+      });
+    });
 
     // Graph state
     let currentIndex = timeline.length - 1;
@@ -431,6 +450,7 @@
             if (d.isConst) html += '<br><em>(const)</em>';
           }
           html += `<br>Line: ${d.line}`;
+          html += `<br>Added: ${timeline[d.firstSeen]?.date || 'unknown'}`;
           html += `<br><em>${modifierHint} to view on GitHub</em>`;
 
           tooltip
@@ -453,6 +473,19 @@
 
       // Update classes for existing nodes
       allNodes.attr('class', d => 'node ' + d.type + (d.isNew ? ' new' : '') + (d.isConst ? ' const' : ''));
+
+      // Color nodes by age: older = cooler colors (blue/purple), newer = warmer (yellow/orange)
+      const maxIdx = index || 1; // Avoid division by zero
+      allNodes.select('circle')
+        .attr('fill', d => {
+          const t = d.firstSeen / maxIdx;
+          return d3.interpolateTurbo(0.15 + t * 0.7);
+        });
+      allNodes.select('rect')
+        .attr('fill', d => {
+          const t = d.firstSeen / maxIdx;
+          return d3.interpolateTurbo(0.15 + t * 0.7);
+        });
 
       // Force simulation
       if (simulation) simulation.stop();
