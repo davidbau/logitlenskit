@@ -606,7 +606,7 @@ var LogitLensWidget = (function() {
                     // Mini SVG line style indicator for pinned rows (wider to show dash-dot pattern)
                     if (isPinnedRow) {
                         html += '<svg width="20" height="10" style="vertical-align: middle; margin-right: 2px;">';
-                        html += '<line x1="0" y1="5" x2="20" y2="5" stroke="#333" stroke-width="1.5"';
+                        html += '<line x1="0" y1="5" x2="20" y2="5" stroke="' + (darkMode ? '#ccc' : '#333') + '" stroke-width="1.5"';
                         if (rowLineStyle.dash) {
                             html += ' stroke-dasharray="' + rowLineStyle.dash + '"';
                         }
@@ -1604,7 +1604,7 @@ var LogitLensWidget = (function() {
                         label.setAttribute("x", x);
                         label.setAttribute("y", chartInnerHeight + 12);
                         label.setAttribute("text-anchor", "middle");
-                        label.setAttribute("font-size", "9");
+                        label.setAttribute("font-size", "10");
                         label.setAttribute("fill", darkMode ? "#aaa" : "#666");
                         label.textContent = widgetData.layers[layerIdx];
                         tickGroup.appendChild(label);
@@ -1743,7 +1743,7 @@ var LogitLensWidget = (function() {
                     var tickLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     tickLabel.setAttribute("x", -5); tickLabel.setAttribute("y", tickY + 3);
                     tickLabel.setAttribute("text-anchor", "end");
-                    tickLabel.setAttribute("font-size", "8");
+                    tickLabel.setAttribute("font-size", "9");
                     tickLabel.setAttribute("fill", darkMode ? "#aaa" : "#666");
                     tickLabel.textContent = formatPct(maxProb);
                     g.appendChild(tickLabel);
@@ -1845,7 +1845,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "25"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
+                        text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = visualizeSpaces(rowToken);
                         legendItem.appendChild(text);
@@ -1902,7 +1902,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
+                        text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = groupLabel;
                         legendItem.appendChild(text);
@@ -1951,7 +1951,7 @@ var LogitLensWidget = (function() {
 
                     var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                    text.setAttribute("font-size", "9"); text.setAttribute("fill", darkMode ? "#aaa" : "#666");
+                    text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#aaa" : "#666");
                     text.setAttribute("clip-path", "url(#" + clipId + ")");
                     text.textContent = visualizeSpaces(hoverLabel);
                     legendItem.appendChild(text);
