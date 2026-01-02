@@ -1,6 +1,57 @@
+/**
+ * LogitLensWidget - Interactive visualization of transformer logit lens data
+ *
+ * DATA MODEL
+ * ==========
+ *
+ * Input data (widgetData after normalization):
+ * {
+ *   layers: number[],           // Layer indices [0, 1, 2, ...]
+ *   tokens: string[],           // Input tokens ["The", " capital", ...]
+ *   cells: [                    // [position][layer]
+ *     [{ token, prob, trajectory, topk }, ...]
+ *   ],
+ *   meta: { model, version }
+ * }
+ *
+ * Cell data structure:
+ * {
+ *   token: string,              // Top predicted token at this position/layer
+ *   prob: number,               // Probability of top token (0-1)
+ *   trajectory: number[],       // Probability of this token across all layers
+ *   topk: [                     // Top-k predictions at this cell
+ *     { token: string, prob: number }, ...
+ *   ]
+ * }
+ *
+ * Pinned trajectory group:
+ * {
+ *   tokens: string[],           // Tokens in this group (usually 1)
+ *   color: string,              // Hex color like "#ff6600"
+ *   lineStyle: { name, dash }   // Line style for chart
+ * }
+ *
+ * Pinned row:
+ * {
+ *   pos: number,                // Token position (row index)
+ *   lineStyle: { name, dash }   // Line style for this row's trajectories
+ * }
+ *
+ * UI State (serializable via getState/setState):
+ * {
+ *   chartHeight, inputTokenWidth, cellWidth, maxRows, maxTableWidth,
+ *   plotMinLayer, colorModes, title, colorIndex, pinnedGroups,
+ *   lastPinnedGroupIndex, pinnedRows, heatmapBaseColor, heatmapNextColor,
+ *   darkMode
+ * }
+ */
+
 var LogitLensWidget = (function() {
     var instanceCount = 0;
 
+    // ═══════════════════════════════════════════════════════════════
+    // DATA NORMALIZATION
+    // ═══════════════════════════════════════════════════════════════
     // Normalize data from compact format (v2) to internal format
     function normalizeData(data) {
         // Already in v1 format (has cells)
@@ -239,18 +290,115 @@ var LogitLensWidget = (function() {
 
         // Widget logic (same as original, just using uid and widgetData)
         var widgetInterface = (function() {
+            // ═══════════════════════════════════════════════════════════════
+            // CONSTANTS (derived from data, do not change after initialization)
+            // ═══════════════════════════════════════════════════════════════
             var nLayers = widgetData.layers.length;
+            var nPositions = widgetData.tokens.length;
+            var defaultNextToken = widgetData.cells[nPositions - 1][nLayers - 1].token;
 
-            // UI state variables - can be restored from uiState parameter
-            // chartHeight: null means "use default based on font size"
-            var chartHeight = (uiState && uiState.chartHeight) || null;
-            var inputTokenWidth = (uiState && uiState.inputTokenWidth) || 100;
-
+            // ═══════════════════════════════════════════════════════════════
+            // CONFIGURATION (fixed limits and palettes)
+            // ═══════════════════════════════════════════════════════════════
             var minChartHeight = 60;
             var maxChartHeight = 400;
+            var minCellWidth = 10;
+            var maxCellWidth = 200;
+            var colors = ["#2196F3", "#e91e63", "#4CAF50", "#FF9800", "#9C27B0", "#00BCD4", "#F44336", "#8BC34A"];
+            var lineStyles = [
+                { dash: "", name: "solid" },
+                { dash: "8,4", name: "dashed" },
+                { dash: "2,3", name: "dotted" },
+                { dash: "8,4,2,4", name: "dash-dot" }
+            ];
+
+            // ═══════════════════════════════════════════════════════════════
+            // STATE (all mutable widget state in one place)
+            // ═══════════════════════════════════════════════════════════════
+            var state = {
+                // Layout dimensions (null = use default/auto)
+                chartHeight: (uiState && uiState.chartHeight) || null,
+                inputTokenWidth: (uiState && uiState.inputTokenWidth) || 100,
+                currentCellWidth: (uiState && uiState.cellWidth) || 44,
+                currentMaxRows: (uiState && uiState.maxRows !== undefined) ? uiState.maxRows : null,
+                maxTableWidth: (uiState && uiState.maxTableWidth !== undefined) ? uiState.maxTableWidth : null,
+                plotMinLayer: Math.max(0, Math.min(nLayers - 2, (uiState && uiState.plotMinLayer !== undefined) ? uiState.plotMinLayer : 0)),
+
+                // Computed layout (updated by computeVisibleLayers)
+                currentVisibleIndices: [],
+                currentStride: 1,
+
+                // Interaction state
+                openPopupCell: null,
+                currentHoverPos: nPositions - 1,
+                colorPickerTarget: null,
+
+                // Pinned trajectories
+                pinnedGroups: (uiState && uiState.pinnedGroups) ? JSON.parse(JSON.stringify(uiState.pinnedGroups)) : [],
+                pinnedRows: [],  // populated below from uiState
+                lastPinnedGroupIndex: (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1,
+
+                // Color settings
+                colorModes: (uiState && uiState.colorModes) ? uiState.colorModes.slice() :
+                            (uiState && uiState.colorMode && uiState.colorMode !== "none") ? [uiState.colorMode] :
+                            (uiState && uiState.colorMode === "none") ? [] : ["top", defaultNextToken],
+                colorIndex: (uiState && uiState.colorIndex) || 0,
+                heatmapBaseColor: (uiState && uiState.heatmapBaseColor) || null,
+                heatmapNextColor: (uiState && uiState.heatmapNextColor) || null,
+
+                // Display settings
+                customTitle: (uiState && uiState.title) || "Logit Lens: Top Predictions by Layer",
+                darkModeOverride: (uiState && uiState.darkMode !== undefined) ? uiState.darkMode : null,
+
+                // Widget linking
+                linkedWidgets: [],
+                isSyncing: false,
+
+                // Drag interaction state
+                colResizeDrag: { active: false, type: null, startX: 0, startWidth: 0, colIdx: 0 },
+                yAxisDrag: { active: false, startX: 0, startWidth: 0 },
+                xAxisDrag: { active: false, startY: 0, startHeight: 0 },
+                plotMinLayerDrag: { active: false, startX: 0, startMinLayer: 0, layerIdx: 0, layerXAtStart: 0, usableWidth: 0, dotRadius: 0 },
+                rightEdgeDrag: { active: false, startX: 0, startTableWidth: 0, hadMaxTableWidth: false, startMaxTableWidth: null },
+            };
+
+            // Restore pinned rows from uiState, mapping lineStyle names back to objects
+            if (uiState && uiState.pinnedRows) {
+                state.pinnedRows = uiState.pinnedRows.map(function(pr) {
+                    var style = lineStyles.find(function(ls) { return ls.name === pr.lineStyleName; }) || lineStyles[0];
+                    return { pos: pr.pos, lineStyle: style };
+                });
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // DOM HELPERS (centralized element access)
+            // ═══════════════════════════════════════════════════════════════
+            var dom = {
+                widget: function() { return document.getElementById(uid); },
+                table: function() { return document.getElementById(uid + "_table"); },
+                chart: function() { return document.getElementById(uid + "_chart"); },
+                popup: function() { return document.getElementById(uid + "_popup"); },
+                popupClose: function() { return document.getElementById(uid + "_popup_close"); },
+                popupLayer: function() { return document.getElementById(uid + "_popup_layer"); },
+                popupPos: function() { return document.getElementById(uid + "_popup_pos"); },
+                popupContent: function() { return document.getElementById(uid + "_popup_content"); },
+                colorMenu: function() { return document.getElementById(uid + "_color_menu"); },
+                colorBtn: function() { return document.getElementById(uid + "_color_btn"); },
+                colorPicker: function() { return document.getElementById(uid + "_color_picker"); },
+                title: function() { return document.getElementById(uid + "_title"); },
+                titleText: function() { return document.getElementById(uid + "_title_text"); },
+                overlay: function() { return document.getElementById(uid + "_overlay"); },
+                resizeHint: function() { return document.getElementById(uid + "_resize_hint"); },
+                resizeBottom: function() { return document.getElementById(uid + "_resize_bottom"); },
+                resizeRight: function() { return document.getElementById(uid + "_resize_right"); }
+            };
+
+            // ═══════════════════════════════════════════════════════════════
+            // HELPER FUNCTIONS
+            // ═══════════════════════════════════════════════════════════════
             // Helper to get content font size in pixels (parses CSS variable)
             function getContentFontSizePx() {
-                var widgetEl = document.getElementById(uid);
+                var widgetEl = dom.widget();
                 if (!widgetEl) return 10;
                 var style = getComputedStyle(widgetEl);
                 var sizeStr = style.getPropertyValue('--ll-content-size').trim() || '10px';
@@ -263,7 +411,7 @@ var LogitLensWidget = (function() {
                 var topMargin = Math.max(10, fontSize * 1.2);
                 var bottomMargin = Math.max(25, fontSize * 1.5);
                 // Try to measure actual row height from table
-                var table = document.getElementById(uid + "_table");
+                var table = dom.table();
                 var rowHeight = fontSize * 2;  // fallback estimate
                 if (table) {
                     var rows = table.querySelectorAll("tr");
@@ -277,7 +425,7 @@ var LogitLensWidget = (function() {
             }
             // Get actual chart height (use default if not explicitly set)
             function getActualChartHeight() {
-                return chartHeight !== null ? chartHeight : getDefaultChartHeight();
+                return state.chartHeight !== null ? state.chartHeight : getDefaultChartHeight();
             }
             // Dynamic margins that scale with font size
             function getChartMargin() {
@@ -295,77 +443,32 @@ var LogitLensWidget = (function() {
             }
             var minCellWidth = 10;
             var maxCellWidth = 200;
-            var currentCellWidth = (uiState && uiState.cellWidth) || 44;
-            var currentVisibleIndices = [];
-            var currentStride = 1;
-            var currentMaxRows = (uiState && uiState.maxRows !== undefined) ? uiState.maxRows : null;
-            var maxTableWidth = (uiState && uiState.maxTableWidth !== undefined) ? uiState.maxTableWidth : null;
-            var plotMinLayer = (uiState && uiState.plotMinLayer !== undefined) ? uiState.plotMinLayer : 0;
-            // Clamp plotMinLayer to valid range: [0, nLayers - 2]
-            plotMinLayer = Math.max(0, Math.min(nLayers - 2, plotMinLayer));
-            var openPopupCell = null;
-            var currentHoverPos = widgetData.tokens.length - 1;
-            // colorModes is an array of active color modes; empty array means "none"
-            // Backward compat: old state may have colorMode as string
-            // Default: show both "top" and the specific next token for visual interest
-            var defaultNextToken = widgetData.cells[widgetData.tokens.length - 1][nLayers - 1].token;
-            var colorModes = (uiState && uiState.colorModes) ? uiState.colorModes.slice() :
-                             (uiState && uiState.colorMode && uiState.colorMode !== "none") ? [uiState.colorMode] :
-                             (uiState && uiState.colorMode === "none") ? [] : ["top", defaultNextToken];
-            var customTitle = (uiState && uiState.title) || "Logit Lens: Top Predictions by Layer";
-
-            var colors = ["#2196F3", "#e91e63", "#4CAF50", "#FF9800", "#9C27B0", "#00BCD4", "#F44336", "#8BC34A"];
-            var colorIndex = (uiState && uiState.colorIndex) || 0;
-            var pinnedGroups = (uiState && uiState.pinnedGroups) ? JSON.parse(JSON.stringify(uiState.pinnedGroups)) : [];
-            var heatmapBaseColor = (uiState && uiState.heatmapBaseColor) || null; // null = default blue gradient
-            var heatmapNextColor = (uiState && uiState.heatmapNextColor) || null; // null = default blue gradient
-            var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' } or { type: 'heatmapNext' }
-            var lastPinnedGroupIndex = (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1;
-            // Dark mode: null = auto-detect from CSS color-scheme, true/false = override
-            var darkModeOverride = (uiState && uiState.darkMode !== undefined) ? uiState.darkMode : null;
 
             // Get effective dark mode state (checks override, falls back to CSS detection)
             function isDarkMode() {
-                if (darkModeOverride !== null) {
-                    return darkModeOverride;
+                if (state.darkModeOverride !== null) {
+                    return state.darkModeOverride;
                 }
                 // Auto-detect from CSS color-scheme on container or ancestors
                 return getComputedStyle(container).colorScheme === 'dark';
             }
 
-            // Pinned rows: array of {pos: number, lineStyle: object}
-            var lineStyles = [
-                { dash: "", name: "solid" },
-                { dash: "8,4", name: "dashed" },
-                { dash: "2,3", name: "dotted" },
-                { dash: "8,4,2,4", name: "dash-dot" }
-            ];
-
-            // Restore pinned rows from uiState, mapping lineStyle names back to objects
-            var pinnedRows = [];
-            if (uiState && uiState.pinnedRows) {
-                pinnedRows = uiState.pinnedRows.map(function(pr) {
-                    var style = lineStyles.find(function(ls) { return ls.name === pr.lineStyleName; }) || lineStyles[0];
-                    return { pos: pr.pos, lineStyle: style };
-                });
-            }
-
             function getNextColor() {
-                var c = colors[colorIndex % colors.length];
-                colorIndex++;
+                var c = colors[state.colorIndex % colors.length];
+                state.colorIndex++;
                 return c;
             }
 
             function getColorForToken(token) {
-                for (var i = 0; i < pinnedGroups.length; i++) {
-                    if (pinnedGroups[i].tokens.indexOf(token) >= 0) return pinnedGroups[i].color;
+                for (var i = 0; i < state.pinnedGroups.length; i++) {
+                    if (state.pinnedGroups[i].tokens.indexOf(token) >= 0) return state.pinnedGroups[i].color;
                 }
                 return null;
             }
 
             function findGroupForToken(token) {
-                for (var i = 0; i < pinnedGroups.length; i++) {
-                    if (pinnedGroups[i].tokens.indexOf(token) >= 0) return i;
+                for (var i = 0; i < state.pinnedGroups.length; i++) {
+                    if (state.pinnedGroups[i].tokens.indexOf(token) >= 0) return i;
                 }
                 return -1;
             }
@@ -400,34 +503,34 @@ var LogitLensWidget = (function() {
                 var winningGroup = null;
                 var winningProb = top1Prob;
 
-                for (var i = 0; i < pinnedGroups.length; i++) {
-                    var groupProb = getGroupProbAtLayer(pinnedGroups[i], pos, layerIdx);
+                for (var i = 0; i < state.pinnedGroups.length; i++) {
+                    var groupProb = getGroupProbAtLayer(state.pinnedGroups[i], pos, layerIdx);
                     if (groupProb > winningProb) {
                         winningProb = groupProb;
-                        winningGroup = pinnedGroups[i];
+                        winningGroup = state.pinnedGroups[i];
                     }
                 }
                 return winningGroup;
             }
 
             function findPinnedRow(pos) {
-                for (var i = 0; i < pinnedRows.length; i++) {
-                    if (pinnedRows[i].pos === pos) return i;
+                for (var i = 0; i < state.pinnedRows.length; i++) {
+                    if (state.pinnedRows[i].pos === pos) return i;
                 }
                 return -1;
             }
 
             function getLineStyleForRow(pos) {
                 var idx = findPinnedRow(pos);
-                if (idx >= 0) return pinnedRows[idx].lineStyle;
+                if (idx >= 0) return state.pinnedRows[idx].lineStyle;
                 return lineStyles[0];  // default solid
             }
 
             function allPinnedGroupsBelowThreshold(pos, threshold) {
                 // Check if all pinned groups have max prob < threshold at this position
-                if (pinnedGroups.length === 0) return true;
-                for (var i = 0; i < pinnedGroups.length; i++) {
-                    var traj = getGroupTrajectory(pinnedGroups[i], pos);
+                if (state.pinnedGroups.length === 0) return true;
+                for (var i = 0; i < state.pinnedGroups.length; i++) {
+                    var traj = getGroupTrajectory(state.pinnedGroups[i], pos);
                     var maxProb = Math.max.apply(null, traj);
                     if (maxProb >= threshold) return false;
                 }
@@ -465,7 +568,7 @@ var LogitLensWidget = (function() {
                 var idx = findPinnedRow(pos);
                 if (idx >= 0) {
                     // Unpin the row
-                    pinnedRows.splice(idx, 1);
+                    state.pinnedRows.splice(idx, 1);
                     return false;
                 } else {
                     // Check if we should auto-pin a token
@@ -474,21 +577,43 @@ var LogitLensWidget = (function() {
                         if (bestToken && findGroupForToken(bestToken) < 0) {
                             // Pin this token
                             var newGroup = { color: getNextColor(), tokens: [bestToken] };
-                            pinnedGroups.push(newGroup);
-                            lastPinnedGroupIndex = pinnedGroups.length - 1;
+                            state.pinnedGroups.push(newGroup);
+                            state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
                         }
                     }
                     // Pin the row with next available line style
-                    var styleIdx = pinnedRows.length % lineStyles.length;
-                    pinnedRows.push({ pos: pos, lineStyle: lineStyles[styleIdx] });
+                    var styleIdx = state.pinnedRows.length % lineStyles.length;
+                    state.pinnedRows.push({ pos: pos, lineStyle: lineStyles[styleIdx] });
                     return true;
                 }
             }
+
+            // ═══════════════════════════════════════════════════════════════
+            // UTILITY FUNCTIONS
+            // ═══════════════════════════════════════════════════════════════
 
             function escapeHtml(text) {
                 var div = document.createElement("div");
                 div.textContent = text;
                 return div.innerHTML;
+            }
+
+            // Round probability to a nice value for chart y-axis scale
+            function niceMax(p) {
+                if (p >= 0.95) return 1.0;
+                var niceValues = [0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0];
+                for (var i = 0; i < niceValues.length; i++) {
+                    if (p <= niceValues[i]) return niceValues[i];
+                }
+                return 1.0;
+            }
+
+            // Format probability as percentage string with minimal digits
+            function formatPct(p) {
+                var pct = p * 100;
+                if (pct >= 1) return Math.round(pct) + "%";
+                if (pct >= 0.1) return pct.toFixed(1) + "%";
+                return pct.toFixed(2) + "%";
             }
 
             function normalizeForComparison(token) {
@@ -565,6 +690,10 @@ var LogitLensWidget = (function() {
                 return result;
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // COLOR MANAGEMENT
+            // ═══════════════════════════════════════════════════════════════
+
             function probToColor(prob, baseColor) {
                 if (baseColor) {
                     var hex = baseColor.replace('#', '');
@@ -612,8 +741,34 @@ var LogitLensWidget = (function() {
                 return widgetData.layers.map(function() { return 0; });
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // TABLE RENDERING
+            // ═══════════════════════════════════════════════════════════════
+            //
+            // RENDER PIPELINE
+            // ---------------
+            // The widget has a two-level render pipeline:
+            //
+            // 1. Full render (buildTable):
+            //    - Rebuilds entire table HTML and chart SVG
+            //    - Called when: layout changes, rows added/removed, colors change
+            //    - Usage: render() or buildTable(cellWidth, indices, maxRows, stride)
+            //
+            // 2. Chart-only update (drawAllTrajectories):
+            //    - Updates only the trajectory chart SVG
+            //    - Called when: hovering over cells (shows preview trajectory)
+            //    - Usage: drawAllTrajectories(hoverTraj, hoverColor, hoverLabel, width, pos)
+            //
+            // Most state changes should call render() which rebuilds everything.
+            // Hover interactions call drawAllTrajectories() directly for performance.
+
+            // Convenience function to re-render the widget using current state
+            function render() {
+                buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows, state.currentStride);
+            }
+
             function computeVisibleLayers(cellWidth, containerWidth) {
-                var availableWidth = containerWidth - inputTokenWidth - 1;
+                var availableWidth = containerWidth - state.inputTokenWidth - 1;
                 var maxCols = Math.max(1, Math.floor(availableWidth / cellWidth));
 
                 if (maxCols >= nLayers) {
@@ -638,11 +793,11 @@ var LogitLensWidget = (function() {
             }
 
             function updateChartDimensions() {
-                var table = document.getElementById(uid + "_table");
+                var table = dom.table();
                 var tableWidth = table.offsetWidth;
-                var svg = document.getElementById(uid + "_chart");
+                var svg = dom.chart();
                 svg.setAttribute("width", tableWidth);
-                // Update height (important when font size changes and chartHeight is auto)
+                // Update height (important when font size changes and state.chartHeight is auto)
                 svg.setAttribute("height", getActualChartHeight());
 
                 var firstInputCell = table.querySelector(".input-token");
@@ -652,14 +807,14 @@ var LogitLensWidget = (function() {
                     var actualInputRight = inputCellRect.right - tableRect.left;
                     return tableWidth - actualInputRight;
                 }
-                return tableWidth - inputTokenWidth;
+                return tableWidth - state.inputTokenWidth;
             }
 
             function buildTable(cellWidth, visibleLayerIndices, maxRows, stride) {
-                currentVisibleIndices = visibleLayerIndices;
-                currentMaxRows = maxRows;
-                if (stride !== undefined) currentStride = stride;
-                var table = document.getElementById(uid + "_table");
+                state.currentVisibleIndices = visibleLayerIndices;
+                state.currentMaxRows = maxRows;
+                if (stride !== undefined) state.currentStride = stride;
+                var table = dom.table();
                 var html = "";
 
                 var totalTokens = widgetData.tokens.length;
@@ -675,7 +830,7 @@ var LogitLensWidget = (function() {
                 }
 
                 html += "<colgroup>";
-                html += '<col style="width:' + inputTokenWidth + 'px;">';
+                html += '<col style="width:' + state.inputTokenWidth + 'px;">';
                 visibleLayerIndices.forEach(function() {
                     html += '<col style="width:' + cellWidth + 'px;">';
                 });
@@ -689,10 +844,10 @@ var LogitLensWidget = (function() {
 
                 // Helper to get color for a mode
                 function getColorForMode(mode) {
-                    if (mode === "top") return heatmapBaseColor || defaultBaseColor;
+                    if (mode === "top") return state.heatmapBaseColor || defaultBaseColor;
                     var groupColor = getColorForToken(mode);
                     if (groupColor) return groupColor;
-                    return heatmapNextColor || defaultNextColor;
+                    return state.heatmapNextColor || defaultNextColor;
                 }
 
                 // Helper to get probability for a mode at a cell
@@ -711,7 +866,7 @@ var LogitLensWidget = (function() {
                     html += "<tr>";
 
                     // Input token cell with optional highlight background for pinned rows
-                    var inputStyle = "width:" + inputTokenWidth + "px; max-width:" + inputTokenWidth + "px;";
+                    var inputStyle = "width:" + state.inputTokenWidth + "px; max-width:" + state.inputTokenWidth + "px;";
                     if (isPinnedRow) {
                         inputStyle += isDarkMode() ? " background: #4a4a00; color: #fff;" : " background: #fff59d;";
                     }
@@ -747,8 +902,8 @@ var LogitLensWidget = (function() {
                         var cellProb = 0;
                         var winningColor = null;
                         var winningMode = null;
-                        if (colorModes.length > 0) {
-                            colorModes.forEach(function(mode) {
+                        if (state.colorModes.length > 0) {
+                            state.colorModes.forEach(function(mode) {
                                 var modeProb = getProbForMode(mode, cellData);
                                 // "top" only wins if strictly greater; others win on >=
                                 var wins = (winningMode === "top") ? (modeProb >= cellProb) :
@@ -762,14 +917,14 @@ var LogitLensWidget = (function() {
                             });
                         }
 
-                        var color = colorModes.length === 0 ? (isDarkMode() ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
+                        var color = state.colorModes.length === 0 ? (isDarkMode() ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
                         var textColor;
                         if (isDarkMode()) {
                             // Dark mode: light text always (glowing colors on dark background)
-                            textColor = colorModes.length === 0 ? "#e0e0e0" : (cellProb < 0.7 ? "#e0e0e0" : "#fff");
+                            textColor = state.colorModes.length === 0 ? "#e0e0e0" : (cellProb < 0.7 ? "#e0e0e0" : "#fff");
                         } else {
                             // Light mode: dark text on light backgrounds, white text on saturated colors
-                            textColor = colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
+                            textColor = state.colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
                         }
                         var pinnedColor = getColorForToken(cellData.token);
                         if (!pinnedColor) {
@@ -797,7 +952,7 @@ var LogitLensWidget = (function() {
                 });
 
                 html += "<tr>";
-                html += '<th class="corner-hdr" style="width:' + inputTokenWidth + 'px; max-width:' + inputTokenWidth + 'px;">Layer<div class="resize-handle-input" data-col="-1"></div></th>';
+                html += '<th class="corner-hdr" style="width:' + state.inputTokenWidth + 'px; max-width:' + state.inputTokenWidth + 'px;">Layer<div class="resize-handle-input" data-col="-1"></div></th>';
                 visibleLayerIndices.forEach(function(li, colIdx) {
                     var hasHandle = colIdx < halfwayCol;
                     html += '<th class="layer-hdr" style="width:' + cellWidth + 'px; max-width:' + cellWidth + 'px;">' + widgetData.layers[li];
@@ -823,32 +978,36 @@ var LogitLensWidget = (function() {
                 }
 
                 var chartInnerWidth = updateChartDimensions();
-                drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
                 updateTitle();
 
-                var hint = document.getElementById(uid + "_resize_hint");
-                var hintMain = currentStride > 1 ?
-                    "showing every " + currentStride + " layers ending at " + (nLayers-1) :
+                var hint = dom.resizeHint();
+                var hintMain = state.currentStride > 1 ?
+                    "showing every " + state.currentStride + " layers ending at " + (nLayers-1) :
                     "showing all " + nLayers + " layers";
                 hint.innerHTML = '<span class="resize-hint-main">' + hintMain + '</span><span class="resize-hint-extra"> (drag column borders to adjust)</span>';
 
                 // Hover over hint shows extra text and all resize handles
                 hint.addEventListener("mouseenter", function() {
                     hint.querySelector(".resize-hint-extra").style.display = "inline";
-                    document.getElementById(uid).classList.add("show-all-handles");
+                    dom.widget().classList.add("show-all-handles");
                 });
                 hint.addEventListener("mouseleave", function() {
                     hint.querySelector(".resize-hint-extra").style.display = "none";
-                    document.getElementById(uid).classList.remove("show-all-handles");
+                    dom.widget().classList.remove("show-all-handles");
                 });
             }
 
-            function updateTitle() {
-                var titleEl = document.getElementById(uid + "_title");
+            // ═══════════════════════════════════════════════════════════════
+            // TITLE AND MENU MANAGEMENT
+            // ═══════════════════════════════════════════════════════════════
 
-                // Constrain title width to match maxTableWidth if set, but allow wrapping
-                if (maxTableWidth !== null) {
-                    titleEl.style.maxWidth = maxTableWidth + "px";
+            function updateTitle() {
+                var titleEl = dom.title();
+
+                // Constrain title width to match state.maxTableWidth if set, but allow wrapping
+                if (state.maxTableWidth !== null) {
+                    titleEl.style.maxWidth = state.maxTableWidth + "px";
                 } else {
                     titleEl.style.maxWidth = "";
                 }
@@ -857,19 +1016,19 @@ var LogitLensWidget = (function() {
                 var pinnedColor = null;
                 var useColoredBy = true;
 
-                if (colorModes.length === 0) {
+                if (state.colorModes.length === 0) {
                     // No modes = "none"
                     displayLabel = "";
                     useColoredBy = false;
-                } else if (colorModes.length === 1) {
+                } else if (state.colorModes.length === 1) {
                     // Single mode - show its name
-                    var mode = colorModes[0];
+                    var mode = state.colorModes[0];
                     if (mode === "top") {
                         displayLabel = "top prediction";
                     } else {
                         var groupIdx = findGroupForToken(mode);
                         if (groupIdx >= 0) {
-                            var group = pinnedGroups[groupIdx];
+                            var group = state.pinnedGroups[groupIdx];
                             displayLabel = getGroupLabel(group);
                             pinnedColor = group.color;
                         } else {
@@ -878,7 +1037,7 @@ var LogitLensWidget = (function() {
 
                         // Check if selected color matches top prediction at last position
                         var lastPos = widgetData.tokens.length - 1;
-                        var lastLayerIdx = currentVisibleIndices[currentVisibleIndices.length - 1];
+                        var lastLayerIdx = state.currentVisibleIndices[state.currentVisibleIndices.length - 1];
                         var topToken = widgetData.cells[lastPos][lastLayerIdx].token;
 
                         if (mode === topToken) {
@@ -888,7 +1047,7 @@ var LogitLensWidget = (function() {
                             }
                             if (tokens.length >= 3) {
                                 var suffix = tokens.slice(-3).join("");
-                                if (suffix.length > 0 && customTitle.endsWith(suffix)) {
+                                if (suffix.length > 0 && state.customTitle.endsWith(suffix)) {
                                     useColoredBy = false;
                                 }
                             }
@@ -896,11 +1055,11 @@ var LogitLensWidget = (function() {
                     }
                 } else {
                     // Multiple modes - show all labels joined by " and "
-                    var labels = colorModes.map(function(mode) {
+                    var labels = state.colorModes.map(function(mode) {
                         if (mode === "top") return "top prediction";
                         var groupIdx = findGroupForToken(mode);
                         if (groupIdx >= 0) {
-                            return getGroupLabel(pinnedGroups[groupIdx]);
+                            return getGroupLabel(state.pinnedGroups[groupIdx]);
                         }
                         return visualizeSpaces(mode);
                     });
@@ -910,7 +1069,7 @@ var LogitLensWidget = (function() {
                 var btnStyle = pinnedColor ? "background: " + pinnedColor + "22;" : "";
 
                 // "None" mode: invisible button but still clickable with placeholder text
-                if (colorModes.length === 0) {
+                if (state.colorModes.length === 0) {
                     btnStyle = "background: transparent; border: none; color: transparent; cursor: pointer;";
                     displayLabel = "colored by None";  // Placeholder for clickable area
                     useColoredBy = false;
@@ -918,15 +1077,15 @@ var LogitLensWidget = (function() {
 
                 var labelPrefix = useColoredBy ? "colored by " : "";
                 var labelContent = "(" + labelPrefix + escapeHtml(displayLabel) + ")";
-                titleEl.innerHTML = '<span class="ll-title-text" id="' + uid + '_title_text" style="cursor: text;">' + escapeHtml(customTitle) + '</span> <span class="color-mode-btn" id="' + uid + '_color_btn" style="' + btnStyle + '">' + labelContent + '</span>';
-                document.getElementById(uid + "_color_btn").addEventListener("click", showColorModeMenu);
-                document.getElementById(uid + "_title_text").addEventListener("click", startTitleEdit);
+                titleEl.innerHTML = '<span class="ll-title-text" id="' + uid + '_title_text" style="cursor: text;">' + escapeHtml(state.customTitle) + '</span> <span class="color-mode-btn" id="' + uid + '_color_btn" style="' + btnStyle + '">' + labelContent + '</span>';
+                dom.colorBtn().addEventListener("click", showColorModeMenu);
+                dom.titleText().addEventListener("click", startTitleEdit);
             }
 
             function startTitleEdit(e) {
                 e.stopPropagation();
-                var titleTextEl = document.getElementById(uid + "_title_text");
-                var currentText = customTitle;
+                var titleTextEl = dom.titleText();
+                var currentText = state.customTitle;
                 var input = document.createElement("input");
                 input.type = "text";
                 input.value = currentText;
@@ -940,14 +1099,14 @@ var LogitLensWidget = (function() {
                 function finishEdit() {
                     var newTitle = input.value.trim();
                     if (newTitle) {
-                        customTitle = newTitle;
+                        state.customTitle = newTitle;
                     } else {
                         // Default to concatenated input tokens, omitting special tokens like <s>
                         var tokens = widgetData.tokens.slice();
                         if (tokens.length > 0 && /^<[^>]+>$/.test(tokens[0].trim())) {
                             tokens = tokens.slice(1);
                         }
-                        customTitle = tokens.join("");
+                        state.customTitle = tokens.join("");
                     }
                     updateTitle();
                 }
@@ -959,7 +1118,7 @@ var LogitLensWidget = (function() {
                         input.blur();
                     } else if (ev.key === "Escape") {
                         ev.preventDefault();
-                        input.value = customTitle;  // restore original
+                        input.value = state.customTitle;  // restore original
                         input.blur();
                     }
                 });
@@ -969,8 +1128,8 @@ var LogitLensWidget = (function() {
                 e.stopPropagation();
                 // Close other menus/popups first
                 closePopup();
-                colorPickerTarget = null;
-                var menu = document.getElementById(uid + "_color_menu");
+                state.colorPickerTarget = null;
+                var menu = dom.colorMenu();
 
                 // Toggle: if menu is already visible, just close it
                 if (menu.classList.contains("visible")) {
@@ -979,40 +1138,40 @@ var LogitLensWidget = (function() {
                 }
                 var btn = e.target;
                 var rect = btn.getBoundingClientRect();
-                var containerRect = document.getElementById(uid).getBoundingClientRect();
+                var containerRect = dom.widget().getBoundingClientRect();
 
                 menu.style.left = (rect.left - containerRect.left) + "px";
                 menu.style.top = (rect.bottom - containerRect.top + 5) + "px";
 
                 var lastPos = widgetData.tokens.length - 1;
-                var lastLayerIdx = currentVisibleIndices[currentVisibleIndices.length - 1];
+                var lastLayerIdx = state.currentVisibleIndices[state.currentVisibleIndices.length - 1];
                 var topToken = widgetData.cells[lastPos][lastLayerIdx].token;
 
                 // Build menu items with color swatches
                 var menuItems = [];
 
-                // "top prediction" - uses heatmapBaseColor
+                // "top prediction" - uses state.heatmapBaseColor
                 menuItems.push({
                     mode: "top",
                     label: "top prediction",
-                    color: heatmapBaseColor || "#8844ff",
+                    color: state.heatmapBaseColor || "#8844ff",
                     colorType: "heatmap",
                     groupIdx: null
                 });
 
-                // Specific top token (if not pinned) - uses heatmapNextColor
+                // Specific top token (if not pinned) - uses state.heatmapNextColor
                 if (findGroupForToken(topToken) < 0) {
                     menuItems.push({
                         mode: topToken,
                         label: topToken,
-                        color: heatmapNextColor || "#cc6622",
+                        color: state.heatmapNextColor || "#cc6622",
                         colorType: "heatmapNext",
                         groupIdx: null
                     });
                 }
 
                 // Pinned groups - each uses its own color
-                pinnedGroups.forEach(function(group, idx) {
+                state.pinnedGroups.forEach(function(group, idx) {
                     var label = getGroupLabel(group);
                     var modeToken = group.tokens[0];
                     menuItems.push({
@@ -1028,7 +1187,7 @@ var LogitLensWidget = (function() {
                 // Build HTML with checkmarks for active modes
                 var html = "";
                 menuItems.forEach(function(item, idx) {
-                    var isActive = colorModes.indexOf(item.mode) >= 0;
+                    var isActive = state.colorModes.indexOf(item.mode) >= 0;
                     var borderStyle = item.borderColor ? "border-left: 3px solid " + item.borderColor + ";" : "";
                     var checkmark = isActive ? '<span style="padding: 8px 10px 8px 20px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 10px 8px 20px; visibility: hidden;">✓</span>';
                     html += '<div class="color-menu-item" data-mode="' + escapeHtml(item.mode) + '" data-idx="' + idx + '" style="' + borderStyle + '">';
@@ -1038,7 +1197,7 @@ var LogitLensWidget = (function() {
                 });
 
                 // "None" item - no color swatch, but has invisible checkmark for alignment
-                var noneActive = colorModes.length === 0;
+                var noneActive = state.colorModes.length === 0;
                 var noneCheckmark = noneActive ? '<span style="padding: 8px 10px 8px 20px; font-weight: bold;">✓</span>' : '<span style="padding: 8px 10px 8px 20px; visibility: hidden;">✓</span>';
                 html += '<div class="color-menu-item" data-mode="none" style="border-top: 1px solid #eee; margin-top: 4px;">' + noneCheckmark + '<span class="color-menu-label">None</span></div>';
 
@@ -1058,29 +1217,29 @@ var LogitLensWidget = (function() {
 
                         if (isModifierClick && mode !== "none") {
                             // Shift/Ctrl/Cmd+click toggles the mode
-                            var idx = colorModes.indexOf(mode);
+                            var idx = state.colorModes.indexOf(mode);
                             var checkmarkSpan = item.querySelector("span");
                             if (idx >= 0) {
-                                colorModes.splice(idx, 1);
+                                state.colorModes.splice(idx, 1);
                                 // Update checkmark to hidden
                                 if (checkmarkSpan) {
                                     checkmarkSpan.style.visibility = "hidden";
                                     checkmarkSpan.style.fontWeight = "normal";
                                 }
                             } else {
-                                colorModes.push(mode);
+                                state.colorModes.push(mode);
                                 // Update checkmark to visible
                                 if (checkmarkSpan) {
                                     checkmarkSpan.style.visibility = "visible";
                                     checkmarkSpan.style.fontWeight = "bold";
                                 }
                             }
-                            // Update None item checkmark based on whether colorModes is empty
+                            // Update None item checkmark based on whether state.colorModes is empty
                             var noneItem = menu.querySelector('.color-menu-item[data-mode="none"]');
                             if (noneItem) {
                                 var noneCheckmark = noneItem.querySelector("span");
                                 if (noneCheckmark) {
-                                    if (colorModes.length === 0) {
+                                    if (state.colorModes.length === 0) {
                                         noneCheckmark.style.visibility = "visible";
                                         noneCheckmark.style.fontWeight = "bold";
                                     } else {
@@ -1090,7 +1249,7 @@ var LogitLensWidget = (function() {
                                 }
                             }
                             // Update table without closing menu
-                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                             return;
                         }
 
@@ -1098,12 +1257,12 @@ var LogitLensWidget = (function() {
                         item.style.animation = "menuBlink-" + uid + " 0.2s ease-in-out";
                         setTimeout(function() {
                             if (mode === "none") {
-                                colorModes = [];
+                                state.colorModes = [];
                             } else {
-                                colorModes = [mode];
+                                state.colorModes = [mode];
                             }
                             menu.classList.remove("visible");
-                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                         }, 200);
                     });
                 });
@@ -1125,15 +1284,15 @@ var LogitLensWidget = (function() {
                         var newColor = swatch.value;
 
                         if (itemData.colorType === "heatmap") {
-                            heatmapBaseColor = newColor;
+                            state.heatmapBaseColor = newColor;
                         } else if (itemData.colorType === "heatmapNext") {
-                            heatmapNextColor = newColor;
+                            state.heatmapNextColor = newColor;
                         } else if (itemData.colorType === "trajectory" && itemData.groupIdx !== null) {
-                            pinnedGroups[itemData.groupIdx].color = newColor;
+                            state.pinnedGroups[itemData.groupIdx].color = newColor;
                             // Update the border color on the menu item
                             if (menuItem) menuItem.style.borderLeftColor = newColor;
                         }
-                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                        buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                     });
 
                     // Remove picking class when color picker closes
@@ -1147,32 +1306,29 @@ var LogitLensWidget = (function() {
                 });
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // RESIZE HANDLING
+            // ═══════════════════════════════════════════════════════════════
+
             function getContainerWidth() {
-                var el = document.getElementById(uid);
+                var el = dom.widget();
                 var actualWidth = el.offsetWidth || 900;
-                if (maxTableWidth !== null) {
-                    return Math.min(maxTableWidth, actualWidth);
+                if (state.maxTableWidth !== null) {
+                    return Math.min(state.maxTableWidth, actualWidth);
                 }
                 return actualWidth;
             }
 
             function getActualContainerWidth() {
-                var el = document.getElementById(uid);
+                var el = dom.widget();
                 return el.offsetWidth || 900;
             }
-
-            // Shared drag state for column resizing (prevents listener accumulation)
-            var colResizeDrag = { active: false, type: null, startX: 0, startWidth: 0, colIdx: 0 };
-            var yAxisDrag = { active: false, startX: 0, startWidth: 0 };
-            var xAxisDrag = { active: false, startY: 0, startHeight: 0 };
-            var plotMinLayerDrag = { active: false, startX: 0, startMinLayer: 0, layerIdx: 0, layerXAtStart: 0, usableWidth: 0, dotRadius: 0 };
-            var rightEdgeDrag = { active: false, startX: 0, startTableWidth: 0, hadMaxTableWidth: false, startMaxTableWidth: null };
 
             function attachResizeListeners() {
                 document.querySelectorAll("#" + uid + " .resize-handle-input").forEach(function(handle) {
                     handle.addEventListener("mousedown", function(e) {
                         closePopup();
-                        colResizeDrag = { active: true, type: 'input', startX: e.clientX, startWidth: inputTokenWidth, colIdx: 0 };
+                        state.colResizeDrag = { active: true, type: 'input', startX: e.clientX, startWidth: state.inputTokenWidth, colIdx: 0 };
                         handle.classList.add("dragging");
                         e.preventDefault();
                         e.stopPropagation();
@@ -1183,7 +1339,7 @@ var LogitLensWidget = (function() {
                     var colIdx = parseInt(handle.dataset.col);
                     handle.addEventListener("mousedown", function(e) {
                         closePopup();
-                        colResizeDrag = { active: true, type: 'column', startX: e.clientX, startWidth: currentCellWidth, colIdx: colIdx };
+                        state.colResizeDrag = { active: true, type: 'column', startX: e.clientX, startWidth: state.currentCellWidth, colIdx: colIdx };
                         handle.classList.add("dragging");
                         e.preventDefault();
                         e.stopPropagation();
@@ -1193,86 +1349,86 @@ var LogitLensWidget = (function() {
 
             // Single document-level listeners for column resize (added once per widget)
             document.addEventListener("mousemove", function(e) {
-                if (!colResizeDrag.active) return;
-                var delta = e.clientX - colResizeDrag.startX;
+                if (!state.colResizeDrag.active) return;
+                var delta = e.clientX - state.colResizeDrag.startX;
 
-                if (colResizeDrag.type === 'input') {
-                    inputTokenWidth = Math.max(40, Math.min(200, colResizeDrag.startWidth + delta));
-                    var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                if (state.colResizeDrag.type === 'input') {
+                    state.inputTokenWidth = Math.max(40, Math.min(200, state.colResizeDrag.startWidth + delta));
+                    var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                    buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
                     notifyLinkedWidgets();
-                } else if (colResizeDrag.type === 'column') {
-                    var numCols = colResizeDrag.colIdx + 1;
+                } else if (state.colResizeDrag.type === 'column') {
+                    var numCols = state.colResizeDrag.colIdx + 1;
                     var widthDelta = delta / numCols;
-                    var newWidth = Math.max(minCellWidth, Math.min(maxCellWidth, colResizeDrag.startWidth + widthDelta));
-                    if (Math.abs(newWidth - currentCellWidth) > 1) {
-                        currentCellWidth = newWidth;
-                        var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                        buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                    var newWidth = Math.max(minCellWidth, Math.min(maxCellWidth, state.colResizeDrag.startWidth + widthDelta));
+                    if (Math.abs(newWidth - state.currentCellWidth) > 1) {
+                        state.currentCellWidth = newWidth;
+                        var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                        buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
                         notifyLinkedWidgets();
                     }
                 }
             });
 
             document.addEventListener("mouseup", function() {
-                if (colResizeDrag.active) {
-                    colResizeDrag.active = false;
+                if (state.colResizeDrag.active) {
+                    state.colResizeDrag.active = false;
                     document.querySelectorAll("#" + uid + " .resize-handle-input, #" + uid + " .resize-handle").forEach(function(h) {
                         h.classList.remove("dragging");
                     });
                 }
-                if (yAxisDrag.active) {
-                    yAxisDrag.active = false;
+                if (state.yAxisDrag.active) {
+                    state.yAxisDrag.active = false;
                 }
-                if (xAxisDrag.active) {
-                    xAxisDrag.active = false;
+                if (state.xAxisDrag.active) {
+                    state.xAxisDrag.active = false;
                 }
-                if (plotMinLayerDrag.active) {
-                    plotMinLayerDrag.active = false;
+                if (state.plotMinLayerDrag.active) {
+                    state.plotMinLayerDrag.active = false;
                 }
-                if (rightEdgeDrag.active) {
-                    rightEdgeDrag.active = false;
-                    document.getElementById(uid + "_resize_right").classList.remove("dragging");
+                if (state.rightEdgeDrag.active) {
+                    state.rightEdgeDrag.active = false;
+                    dom.resizeRight().classList.remove("dragging");
                 }
             });
 
             // X-axis drag for chart height
             document.addEventListener("mousemove", function(e) {
-                if (!xAxisDrag.active) return;
-                var delta = e.clientY - xAxisDrag.startY;
-                var newHeight = Math.max(minChartHeight, Math.min(maxChartHeight, xAxisDrag.startHeight + delta));
+                if (!state.xAxisDrag.active) return;
+                var delta = e.clientY - state.xAxisDrag.startY;
+                var newHeight = Math.max(minChartHeight, Math.min(maxChartHeight, state.xAxisDrag.startHeight + delta));
                 var currentHeight = getActualChartHeight();
                 if (Math.abs(newHeight - currentHeight) > 2) {
-                    chartHeight = newHeight;  // Explicitly set (no longer using default)
-                    var svg = document.getElementById(uid + "_chart");
-                    svg.setAttribute("height", chartHeight);
+                    state.chartHeight = newHeight;  // Explicitly set (no longer using default)
+                    var svg = dom.chart();
+                    svg.setAttribute("height", state.chartHeight);
                     var chartInnerWidth = updateChartDimensions();
-                    drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                    drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
                 }
             });
 
             document.addEventListener("mousemove", function(e) {
-                if (!yAxisDrag.active) return;
-                var delta = e.clientX - yAxisDrag.startX;
-                inputTokenWidth = Math.max(40, Math.min(200, yAxisDrag.startWidth + delta));
-                var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                if (!state.yAxisDrag.active) return;
+                var delta = e.clientX - state.yAxisDrag.startX;
+                state.inputTokenWidth = Math.max(40, Math.min(200, state.yAxisDrag.startWidth + delta));
+                var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
                 notifyLinkedWidgets();
             });
 
             // Plot min layer drag for x-axis zoom
             document.addEventListener("mousemove", function(e) {
-                if (!plotMinLayerDrag.active) return;
-                var delta = e.clientX - plotMinLayerDrag.startX;
+                if (!state.plotMinLayerDrag.active) return;
+                var delta = e.clientX - state.plotMinLayerDrag.startX;
 
-                // Calculate what plotMinLayer value would put the dragged layer at the new x position
-                // The relationship is: x = dotRadius + ((layerIdx - plotMinLayer) / visibleRange) * (usableWidth - 2*dotRadius)
-                // where visibleRange = (nLayers - 1) - plotMinLayer
-                // Solving for plotMinLayer given a new x position for the dragged layer:
-                var dr = plotMinLayerDrag.dotRadius;
-                var uw = plotMinLayerDrag.usableWidth;
-                var layerIdx = plotMinLayerDrag.layerIdx;
-                var targetX = plotMinLayerDrag.layerXAtStart + delta;
+                // Calculate what state.plotMinLayer value would put the dragged layer at the new x position
+                // The relationship is: x = dotRadius + ((layerIdx - state.plotMinLayer) / visibleRange) * (usableWidth - 2*dotRadius)
+                // where visibleRange = (nLayers - 1) - state.plotMinLayer
+                // Solving for state.plotMinLayer given a new x position for the dragged layer:
+                var dr = state.plotMinLayerDrag.dotRadius;
+                var uw = state.plotMinLayerDrag.usableWidth;
+                var layerIdx = state.plotMinLayerDrag.layerIdx;
+                var targetX = state.plotMinLayerDrag.layerXAtStart + delta;
 
                 // Clamp targetX to valid range
                 targetX = Math.max(dr, Math.min(uw - dr, targetX));
@@ -1294,16 +1450,20 @@ var LogitLensWidget = (function() {
                 }
                 var newMinLayer = (t * (nLayers - 1) - layerIdx) / (t - 1);
 
-                // Clamp to valid range: 0 <= plotMinLayer < nLayers - 1
+                // Clamp to valid range: 0 <= state.plotMinLayer < nLayers - 1
                 // Also can't set it beyond the dragged layer (that would flip the axis)
                 newMinLayer = Math.max(0, Math.min(layerIdx - 0.1, newMinLayer));
 
-                if (Math.abs(newMinLayer - plotMinLayer) > 0.01) {
-                    plotMinLayer = newMinLayer;
+                if (Math.abs(newMinLayer - state.plotMinLayer) > 0.01) {
+                    state.plotMinLayer = newMinLayer;
                     var chartInnerWidth = updateChartDimensions();
-                    drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                    drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
                 }
             });
+
+            // ═══════════════════════════════════════════════════════════════
+            // CELL INTERACTION AND POPUP
+            // ═══════════════════════════════════════════════════════════════
 
             function attachCellListeners() {
                 document.querySelectorAll("#" + uid + " .pred-cell, #" + uid + " .input-token").forEach(function(cell) {
@@ -1312,7 +1472,7 @@ var LogitLensWidget = (function() {
                     var isInputToken = cell.classList.contains("input-token");
 
                     cell.addEventListener("mouseenter", function() {
-                        currentHoverPos = pos;
+                        state.currentHoverPos = pos;
                         var chartInnerWidth = updateChartDimensions();
 
                         if (isInputToken) {
@@ -1337,7 +1497,7 @@ var LogitLensWidget = (function() {
                     cell.addEventListener("mouseleave", function() {
                         // Clear hover trajectory when leaving cell
                         var chartInnerWidth = updateChartDimensions();
-                        drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                        drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
                     });
                 });
 
@@ -1349,9 +1509,9 @@ var LogitLensWidget = (function() {
                     cell.addEventListener("click", function(e) {
                         e.stopPropagation();
                         closePopup();
-                        document.getElementById(uid + "_color_menu").classList.remove("visible");
+                        dom.colorMenu().classList.remove("visible");
                         togglePinnedRow(pos);
-                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                        buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                     });
                 });
 
@@ -1366,36 +1526,36 @@ var LogitLensWidget = (function() {
 
                         if (e.shiftKey) {
                             togglePinnedTrajectory(cellData.token, addToGroup);
-                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                             return;
                         }
                         // If color menu is open, first click just dismisses it
-                        var colorMenu = document.getElementById(uid + "_color_menu");
+                        var colorMenu = dom.colorMenu();
                         if (colorMenu && colorMenu.classList.contains("visible")) {
                             colorMenu.classList.remove("visible");
                             return;
                         }
                         // If popup is open, first click just dismisses it (even on different cell)
-                        if (openPopupCell) { closePopup(); return; }
+                        if (state.openPopupCell) { closePopup(); return; }
                         document.querySelectorAll("#" + uid + " .pred-cell.selected").forEach(function(c) { c.classList.remove("selected"); });
                         cell.classList.add("selected");
                         showPopup(cell, pos, li, cellData);
                     });
                 });
 
-                document.getElementById(uid + "_popup_close").addEventListener("click", closePopup);
+                dom.popupClose().addEventListener("click", closePopup);
             }
 
             function closePopup() {
-                var popup = document.getElementById(uid + "_popup");
+                var popup = dom.popup();
                 if (popup) popup.classList.remove("visible");
                 document.querySelectorAll("#" + uid + " .pred-cell.selected").forEach(function(c) { c.classList.remove("selected"); });
-                openPopupCell = null;
+                state.openPopupCell = null;
                 removeOverlay();
             }
 
             function closeColorModeMenu() {
-                var menu = document.getElementById(uid + "_color_menu");
+                var menu = dom.colorMenu();
                 if (menu) menu.classList.remove("visible");
                 removeOverlay();
             }
@@ -1415,24 +1575,24 @@ var LogitLensWidget = (function() {
             }
 
             function removeOverlay() {
-                var overlay = document.getElementById(uid + "_overlay");
+                var overlay = dom.overlay();
                 if (overlay) overlay.remove();
             }
 
             function showPopup(cell, pos, li, cellData) {
                 // Close other menus/popups first
                 closeColorModeMenu();
-                colorPickerTarget = null;
-                openPopupCell = cell;
-                var popup = document.getElementById(uid + "_popup");
+                state.colorPickerTarget = null;
+                state.openPopupCell = cell;
+                var popup = dom.popup();
                 var rect = cell.getBoundingClientRect();
-                var containerRect = document.getElementById(uid).getBoundingClientRect();
+                var containerRect = dom.widget().getBoundingClientRect();
 
                 popup.style.left = (rect.left - containerRect.left + rect.width + 5) + "px";
                 popup.style.top = (rect.top - containerRect.top) + "px";
 
-                document.getElementById(uid + "_popup_layer").textContent = widgetData.layers[li];
-                document.getElementById(uid + "_popup_pos").innerHTML = pos + "<br>Input <code>" + escapeHtml(visualizeSpaces(widgetData.tokens[pos])) + "</code>";
+                dom.popupLayer().textContent = widgetData.layers[li];
+                dom.popupPos().innerHTML = pos + "<br>Input <code>" + escapeHtml(visualizeSpaces(widgetData.tokens[pos])) + "</code>";
 
                 var contentHtml = "";
                 cellData.topk.forEach(function(item, ki) {
@@ -1454,7 +1614,7 @@ var LogitLensWidget = (function() {
                     contentHtml += '<div style="font-size: var(--ll-content-size, 10px); font-style: italic; color: #666; margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">Shift-click to group tokens</div>';
                 }
 
-                document.getElementById(uid + "_popup_content").innerHTML = contentHtml;
+                dom.popupContent().innerHTML = contentHtml;
 
                 document.querySelectorAll("#" + uid + "_popup_content .topk-item").forEach(function(item) {
                     var ki = parseInt(item.dataset.ki);
@@ -1478,7 +1638,7 @@ var LogitLensWidget = (function() {
                         e.stopPropagation();
                         var addToGroup = e.shiftKey || e.ctrlKey || e.metaKey;
                         togglePinnedTrajectory(tokData.token, addToGroup);
-                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                        buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                         var newCell = document.querySelector("#" + uid + " .pred-cell[data-pos='" + pos + "'][data-li='" + li + "']");
                         if (newCell) {
                             newCell.classList.add("selected");
@@ -1497,21 +1657,21 @@ var LogitLensWidget = (function() {
             function togglePinnedTrajectory(token, addToGroup) {
                 var existingGroupIdx = findGroupForToken(token);
 
-                if (addToGroup && lastPinnedGroupIndex >= 0 && lastPinnedGroupIndex < pinnedGroups.length) {
-                    var lastGroup = pinnedGroups[lastPinnedGroupIndex];
+                if (addToGroup && state.lastPinnedGroupIndex >= 0 && state.lastPinnedGroupIndex < state.pinnedGroups.length) {
+                    var lastGroup = state.pinnedGroups[state.lastPinnedGroupIndex];
 
-                    if (existingGroupIdx === lastPinnedGroupIndex) {
+                    if (existingGroupIdx === state.lastPinnedGroupIndex) {
                         lastGroup.tokens = lastGroup.tokens.filter(function(t) { return t !== token; });
                         if (lastGroup.tokens.length === 0) {
-                            pinnedGroups.splice(lastPinnedGroupIndex, 1);
-                            lastPinnedGroupIndex = pinnedGroups.length - 1;
+                            state.pinnedGroups.splice(state.lastPinnedGroupIndex, 1);
+                            state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
                         }
                         return false;
                     } else if (existingGroupIdx >= 0) {
-                        pinnedGroups[existingGroupIdx].tokens = pinnedGroups[existingGroupIdx].tokens.filter(function(t) { return t !== token; });
-                        if (pinnedGroups[existingGroupIdx].tokens.length === 0) {
-                            pinnedGroups.splice(existingGroupIdx, 1);
-                            if (lastPinnedGroupIndex > existingGroupIdx) lastPinnedGroupIndex--;
+                        state.pinnedGroups[existingGroupIdx].tokens = state.pinnedGroups[existingGroupIdx].tokens.filter(function(t) { return t !== token; });
+                        if (state.pinnedGroups[existingGroupIdx].tokens.length === 0) {
+                            state.pinnedGroups.splice(existingGroupIdx, 1);
+                            if (state.lastPinnedGroupIndex > existingGroupIdx) state.lastPinnedGroupIndex--;
                         }
                         lastGroup.tokens.push(token);
                         return true;
@@ -1521,29 +1681,36 @@ var LogitLensWidget = (function() {
                     }
                 } else {
                     if (existingGroupIdx >= 0) {
-                        var group = pinnedGroups[existingGroupIdx];
+                        var group = state.pinnedGroups[existingGroupIdx];
                         group.tokens = group.tokens.filter(function(t) { return t !== token; });
                         if (group.tokens.length === 0) {
-                            pinnedGroups.splice(existingGroupIdx, 1);
-                            if (lastPinnedGroupIndex >= pinnedGroups.length) {
-                                lastPinnedGroupIndex = pinnedGroups.length - 1;
+                            state.pinnedGroups.splice(existingGroupIdx, 1);
+                            if (state.lastPinnedGroupIndex >= state.pinnedGroups.length) {
+                                state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
                             }
                         }
                         return false;
                     } else {
                         var newGroup = { color: getNextColor(), tokens: [token] };
-                        pinnedGroups.push(newGroup);
-                        lastPinnedGroupIndex = pinnedGroups.length - 1;
+                        state.pinnedGroups.push(newGroup);
+                        state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
                         return true;
                     }
                 }
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // CHART RENDERING
+            // ═══════════════════════════════════════════════════════════════
+
             function drawAllTrajectories(hoverTrajectory, hoverColor, hoverLabel, chartInnerWidth, pos) {
-                var svg = document.getElementById(uid + "_chart");
+                // ─────────────────────────────────────────────────────────────
+                // SETUP: Initialize SVG and calculate dimensions
+                // ─────────────────────────────────────────────────────────────
+                var svg = dom.chart();
                 svg.innerHTML = "";
 
-                var table = document.getElementById(uid + "_table");
+                var table = dom.table();
                 var firstInputCell = table.querySelector(".input-token");
                 var tableRect = table.getBoundingClientRect();
                 var inputCellRect = firstInputCell.getBoundingClientRect();
@@ -1560,7 +1727,9 @@ var LogitLensWidget = (function() {
                 g.setAttribute("transform", "translate(" + actualInputRight + "," + chartMargin.top + ")");
                 svg.appendChild(g);
 
-                // X-axis group (draggable to resize chart height)
+                // ─────────────────────────────────────────────────────────────
+                // X-AXIS: Create draggable x-axis for chart height resize
+                // ─────────────────────────────────────────────────────────────
                 var xAxisGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 xAxisGroup.style.cursor = "row-resize";
 
@@ -1595,7 +1764,7 @@ var LogitLensWidget = (function() {
                 });
                 xAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
-                    xAxisDrag = { active: true, startY: e.clientY, startHeight: getActualChartHeight() };
+                    state.xAxisDrag = { active: true, startY: e.clientY, startHeight: getActualChartHeight() };
                     xAxis.setAttribute("stroke", "rgba(33, 150, 243, 0.6)");
                     e.preventDefault();
                     e.stopPropagation();
@@ -1609,14 +1778,14 @@ var LogitLensWidget = (function() {
                 var labelMargin = chartMargin.right;
                 var usableWidth = chartInnerWidth - labelMargin;
 
-                // X-axis scaling: maps layers to x positions, accounting for plotMinLayer zoom
-                // Layer plotMinLayer maps to x=dotRadius (left edge)
+                // X-axis scaling: maps layers to x positions, accounting for state.plotMinLayer zoom
+                // Layer state.plotMinLayer maps to x=dotRadius (left edge)
                 // Layer (nLayers-1) maps to x=usableWidth-dotRadius (right edge)
                 function layerToXForLabels(layerIdx) {
                     if (nLayers <= 1) return usableWidth / 2;
-                    var visibleLayerRange = (nLayers - 1) - plotMinLayer;
+                    var visibleLayerRange = (nLayers - 1) - state.plotMinLayer;
                     if (visibleLayerRange <= 0) return usableWidth / 2;
-                    return dotRadius + ((layerIdx - plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
+                    return dotRadius + ((layerIdx - state.plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
                 }
 
                 // Add clip-path to clip trajectories at left edge when zoomed
@@ -1664,10 +1833,10 @@ var LogitLensWidget = (function() {
                 // Aim for ~24px minimum gap between tick labels
                 var minTickGap = 24;
                 var labelStride = 1;
-                if (currentVisibleIndices.length >= 2) {
+                if (state.currentVisibleIndices.length >= 2) {
                     // Calculate pixel distance between consecutive visible layer indices
-                    var firstX = layerToXForLabels(currentVisibleIndices[0]);
-                    var secondX = layerToXForLabels(currentVisibleIndices[1]);
+                    var firstX = layerToXForLabels(state.currentVisibleIndices[0]);
+                    var secondX = layerToXForLabels(state.currentVisibleIndices[1]);
                     var pixelsPerIndex = Math.abs(secondX - firstX);
                     // Only adjust stride if we have meaningful pixel spacing
                     // (In jsdom/no-layout environments, pixelsPerIndex may be 0 or tiny)
@@ -1676,7 +1845,7 @@ var LogitLensWidget = (function() {
                     }
                 }
 
-                var lastIdx = currentVisibleIndices.length - 1;
+                var lastIdx = state.currentVisibleIndices.length - 1;
                 var showAtIndex = new Set();
                 for (var i = lastIdx; i >= 0; i -= labelStride) {
                     showAtIndex.add(i);
@@ -1693,13 +1862,13 @@ var LogitLensWidget = (function() {
 
                 // X-axis tick labels (all except last are draggable for x-zoom)
                 // Skip labels that would appear to the left of x=0 when zoomed (don't rely on clipping)
-                var isLastVisibleIndex = currentVisibleIndices.length - 1;
+                var isLastVisibleIndex = state.currentVisibleIndices.length - 1;
                 var minXForLabel = 8; // Half width of label, so text doesn't get cut off
-                currentVisibleIndices.forEach(function(layerIdx, i) {
+                state.currentVisibleIndices.forEach(function(layerIdx, i) {
                     if (showAtIndex.has(i)) {
                         var x = layerToXForLabels(layerIdx);
                         // Skip labels that would be drawn too far left (only when zoomed)
-                        if (plotMinLayer > 0 && x < minXForLabel) return;
+                        if (state.plotMinLayer > 0 && x < minXForLabel) return;
 
                         var isLast = (i === isLastVisibleIndex);
                         var isDraggable = !isLast && layerIdx > 0;
@@ -1749,10 +1918,10 @@ var LogitLensWidget = (function() {
                             tickGroup.addEventListener("mousedown", function(e) {
                                 closePopup();
                                 var layerIdxDragged = parseInt(tickGroup.dataset.layerIdx);
-                                plotMinLayerDrag = {
+                                state.plotMinLayerDrag = {
                                     active: true,
                                     startX: e.clientX,
-                                    startMinLayer: plotMinLayer,
+                                    startMinLayer: state.plotMinLayer,
                                     layerIdx: layerIdxDragged,
                                     layerXAtStart: layerToXForLabels(layerIdxDragged),
                                     usableWidth: usableWidth,
@@ -1767,6 +1936,9 @@ var LogitLensWidget = (function() {
                     }
                 });
 
+                // ─────────────────────────────────────────────────────────────
+                // Y-AXIS: Create draggable y-axis for input column resize
+                // ─────────────────────────────────────────────────────────────
                 var yAxisGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 yAxisGroup.style.cursor = "col-resize";
 
@@ -1800,7 +1972,7 @@ var LogitLensWidget = (function() {
                 });
                 yAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
-                    yAxisDrag = { active: true, startX: e.clientX, startWidth: inputTokenWidth };
+                    state.yAxisDrag = { active: true, startX: e.clientX, startWidth: state.inputTokenWidth };
                     yAxis.setAttribute("stroke", "rgba(33, 150, 243, 0.6)");
                     e.preventDefault();
                     e.stopPropagation();
@@ -1818,9 +1990,9 @@ var LogitLensWidget = (function() {
 
                 // Determine which positions to show trajectories for
                 var positionsToShow = [];
-                if (pinnedRows.length > 0) {
+                if (state.pinnedRows.length > 0) {
                     // Only show pinned rows
-                    pinnedRows.forEach(function(pr) { positionsToShow.push(pr.pos); });
+                    state.pinnedRows.forEach(function(pr) { positionsToShow.push(pr.pos); });
                 } else {
                     // Show current hover position
                     positionsToShow.push(pos);
@@ -1828,7 +2000,7 @@ var LogitLensWidget = (function() {
 
                 var allProbs = [];
                 positionsToShow.forEach(function(showPos) {
-                    pinnedGroups.forEach(function(group) {
+                    state.pinnedGroups.forEach(function(group) {
                         var traj = getGroupTrajectory(group, showPos);
                         allProbs = allProbs.concat(traj);
                     });
@@ -1836,27 +2008,13 @@ var LogitLensWidget = (function() {
                 if (hoverTrajectory) allProbs = allProbs.concat(hoverTrajectory);
                 var rawMaxProb = Math.max.apply(null, allProbs.concat([0.001]));  // 0.1% minimum
 
-                // Round up to a nice scale value
-                function niceMax(p) {
-                    if (p >= 0.95) return 1.0;
-                    var niceValues = [0.003, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0];
-                    for (var i = 0; i < niceValues.length; i++) {
-                        if (p <= niceValues[i]) return niceValues[i];
-                    }
-                    return 1.0;
-                }
+                // ─────────────────────────────────────────────────────────────
+                // SCALE CALCULATION: Determine y-axis scale and labels
+                // ─────────────────────────────────────────────────────────────
                 var maxProb = niceMax(rawMaxProb);
 
-                // Format percentage label with minimal digits
-                function formatPct(p) {
-                    var pct = p * 100;
-                    if (pct >= 1) return Math.round(pct) + "%";
-                    if (pct >= 0.1) return pct.toFixed(1) + "%";
-                    return pct.toFixed(2) + "%";
-                }
-
                 // Draw max scale tick and label at top of y-axis (only if there's data)
-                var hasData = pinnedGroups.length > 0 || (hoverTrajectory && hoverLabel);
+                var hasData = state.pinnedGroups.length > 0 || (hoverTrajectory && hoverLabel);
                 if (hasData) {
                     var tickY = 0;  // top of chart
                     var tickLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -1879,10 +2037,10 @@ var LogitLensWidget = (function() {
 
                 // Calculate legend entry count for vertical centering
                 var legendEntryCount = 0;
-                if (pinnedRows.length > 1 && pinnedGroups.length === 1) {
-                    legendEntryCount = 1 + pinnedRows.length;  // title + row entries
+                if (state.pinnedRows.length > 1 && state.pinnedGroups.length === 1) {
+                    legendEntryCount = 1 + state.pinnedRows.length;  // title + row entries
                 } else {
-                    legendEntryCount = pinnedGroups.length;
+                    legendEntryCount = state.pinnedGroups.length;
                 }
                 if (hoverTrajectory && hoverLabel) {
                     legendEntryCount += 1;  // hover entry
@@ -1897,21 +2055,25 @@ var LogitLensWidget = (function() {
                 var legendTotalHeight = legendEntryCount * legendEntryHeight;
                 var legendY = chartMargin.top + Math.max(10 * fontScale, (chartInnerHeight - legendTotalHeight) / 2);
 
-                // Draw trajectories for each position with appropriate line style
+                // ─────────────────────────────────────────────────────────────
+                // TRAJECTORIES: Draw pinned trajectory lines
+                // ─────────────────────────────────────────────────────────────
                 positionsToShow.forEach(function(showPos) {
                     var lineStyle = getLineStyleForRow(showPos);
 
-                    pinnedGroups.forEach(function(group, groupIdx) {
+                    state.pinnedGroups.forEach(function(group, groupIdx) {
                         var traj = getGroupTrajectory(group, showPos);
                         var groupLabel = getGroupLabel(group);
                         drawSingleTrajectory(trajG, traj, group.color, maxProb, groupLabel, false, chartInnerWidth, lineStyle.dash);
                     });
                 });
 
-                // Draw legend entries
+                // ─────────────────────────────────────────────────────────────
+                // LEGEND: Draw legend entries for pinned trajectories
+                // ─────────────────────────────────────────────────────────────
                 // Special case: multiple pinned rows with single group - show group as title, rows as entries
-                if (pinnedRows.length > 1 && pinnedGroups.length === 1) {
-                    var group = pinnedGroups[0];
+                if (state.pinnedRows.length > 1 && state.pinnedGroups.length === 1) {
+                    var group = state.pinnedGroups[0];
                     var groupLabel = getGroupLabel(group);
 
                     // Title entry (group label, no line, outdented, clipped to not exceed y-axis)
@@ -1938,7 +2100,7 @@ var LogitLensWidget = (function() {
                     legendY += legendEntryHeight;
 
                     // Entry per pinned row
-                    pinnedRows.forEach(function(pr, prIdx) {
+                    state.pinnedRows.forEach(function(pr, prIdx) {
                         var rowToken = widgetData.tokens[pr.pos];
                         var lineStyle = pr.lineStyle;
 
@@ -1948,7 +2110,7 @@ var LogitLensWidget = (function() {
 
                         var hitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                         hitTarget.setAttribute("x", "-15"); hitTarget.setAttribute("y", "-8");
-                        hitTarget.setAttribute("width", inputTokenWidth - 5); hitTarget.setAttribute("height", "14");
+                        hitTarget.setAttribute("width", state.inputTokenWidth - 5); hitTarget.setAttribute("height", "14");
                         hitTarget.setAttribute("fill", "transparent");
                         legendItem.appendChild(hitTarget);
 
@@ -1975,7 +2137,7 @@ var LogitLensWidget = (function() {
                         clipPath.setAttribute("id", clipId);
                         var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                         clipRect.setAttribute("x", legendTextX); clipRect.setAttribute("y", -10 * fontScale);
-                        clipRect.setAttribute("width", inputTokenWidth - 50 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
+                        clipRect.setAttribute("width", state.inputTokenWidth - 50 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                         clipPath.appendChild(clipRect);
                         legendItem.appendChild(clipPath);
 
@@ -1991,8 +2153,8 @@ var LogitLensWidget = (function() {
                         closeBtn.addEventListener("click", function(e) {
                             e.stopPropagation();
                             // Unpin this row
-                            pinnedRows.splice(prIdx, 1);
-                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            state.pinnedRows.splice(prIdx, 1);
+                            buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                         });
 
                         legendG.appendChild(legendItem);
@@ -2000,7 +2162,7 @@ var LogitLensWidget = (function() {
                     });
                 } else {
                     // Standard legend: one entry per pinned group
-                    pinnedGroups.forEach(function(group, groupIdx) {
+                    state.pinnedGroups.forEach(function(group, groupIdx) {
                         var groupLabel = getGroupLabel(group);
 
                         var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -2009,7 +2171,7 @@ var LogitLensWidget = (function() {
 
                         var hitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                         hitTarget.setAttribute("x", "-15"); hitTarget.setAttribute("y", "-8");
-                        hitTarget.setAttribute("width", inputTokenWidth - 5); hitTarget.setAttribute("height", "14");
+                        hitTarget.setAttribute("width", state.inputTokenWidth - 5); hitTarget.setAttribute("height", "14");
                         hitTarget.setAttribute("fill", "transparent");
                         legendItem.appendChild(hitTarget);
 
@@ -2032,7 +2194,7 @@ var LogitLensWidget = (function() {
                         clipPath.setAttribute("id", clipId);
                         var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                         clipRect.setAttribute("x", 20 * fontScale); clipRect.setAttribute("y", -10 * fontScale);
-                        clipRect.setAttribute("width", inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
+                        clipRect.setAttribute("width", state.inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                         clipPath.appendChild(clipRect);
                         legendItem.appendChild(clipPath);
 
@@ -2047,11 +2209,11 @@ var LogitLensWidget = (function() {
                         legendItem.addEventListener("mouseleave", function() { closeBtn.style.display = "none"; });
                         closeBtn.addEventListener("click", function(e) {
                             e.stopPropagation();
-                            pinnedGroups.splice(groupIdx, 1);
-                            if (lastPinnedGroupIndex >= pinnedGroups.length) {
-                                lastPinnedGroupIndex = pinnedGroups.length - 1;
+                            state.pinnedGroups.splice(groupIdx, 1);
+                            if (state.lastPinnedGroupIndex >= state.pinnedGroups.length) {
+                                state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
                             }
-                            buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                            buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                         });
 
                         legendG.appendChild(legendItem);
@@ -2059,7 +2221,9 @@ var LogitLensWidget = (function() {
                     });
                 }
 
-                // Show hover trajectory for comparison (even when rows are pinned)
+                // ─────────────────────────────────────────────────────────────
+                // HOVER TRAJECTORY: Show comparison trajectory on hover
+                // ─────────────────────────────────────────────────────────────
                 if (hoverTrajectory && hoverLabel) {
                     drawSingleTrajectory(trajG, hoverTrajectory, hoverColor || "#999", maxProb, hoverLabel, true, chartInnerWidth, "");
 
@@ -2081,7 +2245,7 @@ var LogitLensWidget = (function() {
                     clipPath.setAttribute("id", clipId);
                     var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                     clipRect.setAttribute("x", 20 * fontScale); clipRect.setAttribute("y", -10 * fontScale);
-                    clipRect.setAttribute("width", inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
+                    clipRect.setAttribute("width", state.inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                     clipPath.appendChild(clipRect);
                     legendItem.appendChild(clipPath);
 
@@ -2109,9 +2273,9 @@ var LogitLensWidget = (function() {
                 var usableWidth = chartInnerWidth - labelMargin;
                 function layerToX(layerIdx) {
                     if (nLayers <= 1) return usableWidth / 2;
-                    var visibleLayerRange = (nLayers - 1) - plotMinLayer;
+                    var visibleLayerRange = (nLayers - 1) - state.plotMinLayer;
                     if (visibleLayerRange <= 0) return usableWidth / 2;
-                    return dotRadius + ((layerIdx - plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
+                    return dotRadius + ((layerIdx - state.plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
                 }
 
                 var pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2138,7 +2302,7 @@ var LogitLensWidget = (function() {
                 }
                 g.appendChild(pathEl);
 
-                currentVisibleIndices.forEach(function(layerIdx) {
+                state.currentVisibleIndices.forEach(function(layerIdx) {
                     var p = trajectory[layerIdx];
                     var x = layerToX(layerIdx);
                     var y = chartInnerHeight - (p / maxProb) * chartInnerHeight;
@@ -2159,47 +2323,47 @@ var LogitLensWidget = (function() {
 
             // Global event listeners
 
-            document.getElementById(uid).addEventListener("mousedown", function(e) {
+            dom.widget().addEventListener("mousedown", function(e) {
                 if (e.shiftKey) e.preventDefault();
             });
 
-            document.getElementById(uid).addEventListener("mouseleave", function() {
-                currentHoverPos = widgetData.tokens.length - 1;
+            dom.widget().addEventListener("mouseleave", function() {
+                state.currentHoverPos = widgetData.tokens.length - 1;
                 var chartInnerWidth = updateChartDimensions();
-                drawAllTrajectories(null, null, null, chartInnerWidth, currentHoverPos);
+                drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
             });
 
             // Color picker handler
-            var colorPicker = document.getElementById(uid + "_color_picker");
+            var colorPicker = dom.colorPicker();
             colorPicker.addEventListener("input", function(e) {
-                if (!colorPickerTarget) return;
+                if (!state.colorPickerTarget) return;
                 var newColor = e.target.value;
-                if (colorPickerTarget.type === "trajectory") {
-                    var group = pinnedGroups[colorPickerTarget.groupIdx];
+                if (state.colorPickerTarget.type === "trajectory") {
+                    var group = state.pinnedGroups[state.colorPickerTarget.groupIdx];
                     if (group) {
                         group.color = newColor;
-                        buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                        buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                     }
-                } else if (colorPickerTarget.type === "heatmap") {
-                    heatmapBaseColor = newColor;
-                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows);
+                } else if (state.colorPickerTarget.type === "heatmap") {
+                    state.heatmapBaseColor = newColor;
+                    buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows);
                 }
             });
             colorPicker.addEventListener("change", function() {
-                colorPickerTarget = null;
+                state.colorPickerTarget = null;
             });
 
             // Bottom resize handle for truncating rows
             (function() {
-                var handle = document.getElementById(uid + "_resize_bottom");
-                var table = document.getElementById(uid + "_table");
+                var handle = dom.resizeBottom();
+                var table = dom.table();
                 var isDragging = false, startY = 0, startMaxRows = null, measuredRowHeight = 20;
 
                 handle.addEventListener("mousedown", function(e) {
                     closePopup();
                     isDragging = true;
                     startY = e.clientY;
-                    startMaxRows = currentMaxRows;
+                    startMaxRows = state.currentMaxRows;
                     // Measure actual row height from DOM (use second row to skip header)
                     var rows = table.querySelectorAll("tr");
                     if (rows.length >= 2) {
@@ -2221,8 +2385,8 @@ var LogitLensWidget = (function() {
                     newMaxRows = Math.max(1, Math.min(totalTokens, newMaxRows));
                     if (newMaxRows >= totalTokens) newMaxRows = null;
 
-                    if (newMaxRows !== currentMaxRows) {
-                        buildTable(currentCellWidth, currentVisibleIndices, newMaxRows);
+                    if (newMaxRows !== state.currentMaxRows) {
+                        buildTable(state.currentCellWidth, state.currentVisibleIndices, newMaxRows);
                     }
                 });
 
@@ -2236,18 +2400,18 @@ var LogitLensWidget = (function() {
 
             // Right edge resize handle for table width
             (function() {
-                var handle = document.getElementById(uid + "_resize_right");
+                var handle = dom.resizeRight();
 
                 handle.addEventListener("mousedown", function(e) {
                     closePopup();
-                    var table = document.getElementById(uid + "_table");
-                    rightEdgeDrag = {
+                    var table = dom.table();
+                    state.rightEdgeDrag = {
                         active: true,
                         startX: e.clientX,
                         startTableWidth: table.offsetWidth,
-                        startCellWidth: currentCellWidth,
-                        hadMaxTableWidth: maxTableWidth !== null,
-                        startMaxTableWidth: maxTableWidth
+                        startCellWidth: state.currentCellWidth,
+                        hadMaxTableWidth: state.maxTableWidth !== null,
+                        startMaxTableWidth: state.maxTableWidth
                     };
                     handle.classList.add("dragging");
                     e.preventDefault();
@@ -2257,26 +2421,26 @@ var LogitLensWidget = (function() {
 
             // Right edge drag handler
             document.addEventListener("mousemove", function(e) {
-                if (!rightEdgeDrag.active) return;
-                var delta = e.clientX - rightEdgeDrag.startX;
+                if (!state.rightEdgeDrag.active) return;
+                var delta = e.clientX - state.rightEdgeDrag.startX;
                 var actualContainerWidth = getActualContainerWidth();
-                var targetTableWidth = rightEdgeDrag.startTableWidth + delta;
+                var targetTableWidth = state.rightEdgeDrag.startTableWidth + delta;
 
                 if (delta >= 0) {
-                    // Dragging right - expand maxTableWidth and smoothly expand column width
+                    // Dragging right - expand state.maxTableWidth and smoothly expand column width
                     // Don't exceed container width
                     targetTableWidth = Math.min(targetTableWidth, actualContainerWidth);
 
-                    // Snap maxTableWidth to null when close to container, otherwise set it
-                    if (targetTableWidth >= actualContainerWidth - currentCellWidth) {
-                        maxTableWidth = null;
+                    // Snap state.maxTableWidth to null when close to container, otherwise set it
+                    if (targetTableWidth >= actualContainerWidth - state.currentCellWidth) {
+                        state.maxTableWidth = null;
                     } else {
-                        maxTableWidth = targetTableWidth;
+                        state.maxTableWidth = targetTableWidth;
                     }
 
                     // Calculate new cell width to achieve target table width
-                    var availableForCells = targetTableWidth - inputTokenWidth - 1;
-                    var numVisibleCols = currentVisibleIndices.length;
+                    var availableForCells = targetTableWidth - state.inputTokenWidth - 1;
+                    var numVisibleCols = state.currentVisibleIndices.length;
                     if (numVisibleCols > 0) {
                         var newCellWidth = availableForCells / numVisibleCols;
 
@@ -2289,63 +2453,63 @@ var LogitLensWidget = (function() {
                         newCellWidth = Math.max(minCellWidth, Math.min(maxCellWidth, newCellWidth));
                         // Use a small threshold relative to cell count for smooth dragging
                         var threshold = 0.5 / Math.max(1, numVisibleCols);
-                        if (Math.abs(newCellWidth - currentCellWidth) > threshold) {
-                            currentCellWidth = newCellWidth;
-                            var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                            buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                        if (Math.abs(newCellWidth - state.currentCellWidth) > threshold) {
+                            state.currentCellWidth = newCellWidth;
+                            var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                            buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
                             notifyLinkedWidgets();
                         }
                     }
                 } else {
-                    // Dragging left - introduce maxTableWidth constraint without changing column width
-                    targetTableWidth = Math.max(inputTokenWidth + minCellWidth + 1, targetTableWidth);
+                    // Dragging left - introduce state.maxTableWidth constraint without changing column width
+                    targetTableWidth = Math.max(state.inputTokenWidth + minCellWidth + 1, targetTableWidth);
 
-                    // If user drags back to or past start and didn't have maxTableWidth, abort constraint
-                    if (!rightEdgeDrag.hadMaxTableWidth && targetTableWidth >= rightEdgeDrag.startTableWidth) {
-                        maxTableWidth = null;
+                    // If user drags back to or past start and didn't have state.maxTableWidth, abort constraint
+                    if (!state.rightEdgeDrag.hadMaxTableWidth && targetTableWidth >= state.rightEdgeDrag.startTableWidth) {
+                        state.maxTableWidth = null;
                     } else {
-                        maxTableWidth = targetTableWidth;
+                        state.maxTableWidth = targetTableWidth;
                     }
 
                     // Rebuild table with constraint (may introduce strides), keep column width unchanged
-                    var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                    var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                    buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
                     notifyLinkedWidgets();
                 }
             });
 
-            // Linked widgets for column synchronization
-            var linkedWidgets = [];
-            var isSyncing = false;  // Prevent infinite sync loops
+            // ═══════════════════════════════════════════════════════════════
+            // WIDGET LINKING AND STATE SERIALIZATION
+            // ═══════════════════════════════════════════════════════════════
 
             function getColumnState() {
                 return {
-                    cellWidth: currentCellWidth,
-                    inputTokenWidth: inputTokenWidth,
-                    maxTableWidth: maxTableWidth
+                    cellWidth: state.currentCellWidth,
+                    inputTokenWidth: state.inputTokenWidth,
+                    maxTableWidth: state.maxTableWidth
                 };
             }
 
-            function setColumnState(state, fromSync) {
-                if (isSyncing) return;  // Prevent loops
+            function setColumnState(colState, fromSync) {
+                if (state.isSyncing) return;  // Prevent loops
                 var changed = false;
 
-                if (state.cellWidth !== undefined && state.cellWidth !== currentCellWidth) {
-                    currentCellWidth = state.cellWidth;
+                if (colState.cellWidth !== undefined && colState.cellWidth !== state.currentCellWidth) {
+                    state.currentCellWidth = colState.cellWidth;
                     changed = true;
                 }
-                if (state.inputTokenWidth !== undefined && state.inputTokenWidth !== inputTokenWidth) {
-                    inputTokenWidth = state.inputTokenWidth;
+                if (colState.inputTokenWidth !== undefined && colState.inputTokenWidth !== state.inputTokenWidth) {
+                    state.inputTokenWidth = colState.inputTokenWidth;
                     changed = true;
                 }
-                if (state.maxTableWidth !== undefined && state.maxTableWidth !== maxTableWidth) {
-                    maxTableWidth = state.maxTableWidth;
+                if (colState.maxTableWidth !== undefined && colState.maxTableWidth !== state.maxTableWidth) {
+                    state.maxTableWidth = colState.maxTableWidth;
                     changed = true;
                 }
 
                 if (changed) {
-                    var result = computeVisibleLayers(currentCellWidth, getContainerWidth());
-                    buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+                    var result = computeVisibleLayers(state.currentCellWidth, getContainerWidth());
+                    buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
 
                     // Sync to linked widgets if this wasn't triggered by a sync
                     if (!fromSync) {
@@ -2355,43 +2519,46 @@ var LogitLensWidget = (function() {
             }
 
             function notifyLinkedWidgets() {
-                if (isSyncing) return;
-                isSyncing = true;
-                var state = getColumnState();
-                linkedWidgets.forEach(function(w) {
+                if (state.isSyncing) return;
+                state.isSyncing = true;
+                var colState = getColumnState();
+                state.linkedWidgets.forEach(function(w) {
                     if (w.setColumnState) {
-                        w.setColumnState(state, true);
+                        w.setColumnState(colState, true);
                     }
                 });
-                isSyncing = false;
+                state.isSyncing = false;
             }
 
             // Function to get current UI state for serialization
             function getState() {
                 return {
-                    chartHeight: chartHeight,
-                    inputTokenWidth: inputTokenWidth,
-                    cellWidth: currentCellWidth,
-                    maxRows: currentMaxRows,
-                    maxTableWidth: maxTableWidth,
-                    plotMinLayer: plotMinLayer,
-                    colorModes: colorModes.slice(),
-                    title: customTitle,
-                    colorIndex: colorIndex,
-                    pinnedGroups: JSON.parse(JSON.stringify(pinnedGroups)),
-                    lastPinnedGroupIndex: lastPinnedGroupIndex,
-                    pinnedRows: pinnedRows.map(function(pr) {
+                    chartHeight: state.chartHeight,
+                    inputTokenWidth: state.inputTokenWidth,
+                    cellWidth: state.currentCellWidth,
+                    maxRows: state.currentMaxRows,
+                    maxTableWidth: state.maxTableWidth,
+                    plotMinLayer: state.plotMinLayer,
+                    colorModes: state.colorModes.slice(),
+                    title: state.customTitle,
+                    colorIndex: state.colorIndex,
+                    pinnedGroups: JSON.parse(JSON.stringify(state.pinnedGroups)),
+                    lastPinnedGroupIndex: state.lastPinnedGroupIndex,
+                    pinnedRows: state.pinnedRows.map(function(pr) {
                         return { pos: pr.pos, lineStyleName: pr.lineStyle.name };
                     }),
-                    heatmapBaseColor: heatmapBaseColor,
-                    heatmapNextColor: heatmapNextColor,
-                    darkMode: darkModeOverride
+                    heatmapBaseColor: state.heatmapBaseColor,
+                    heatmapNextColor: state.heatmapNextColor,
+                    darkMode: state.darkModeOverride
                 };
             }
 
-            // Function to apply or remove dark mode class and color-scheme
+            // ═══════════════════════════════════════════════════════════════
+            // DARK MODE
+            // ═══════════════════════════════════════════════════════════════
+
             function applyDarkMode(enabled) {
-                var widgetEl = document.getElementById(uid);
+                var widgetEl = dom.widget();
                 if (widgetEl) {
                     if (enabled) {
                         widgetEl.classList.add("dark-mode");
@@ -2405,11 +2572,11 @@ var LogitLensWidget = (function() {
 
             // Initial build with container width
             var containerWidth = getContainerWidth();
-            var result = computeVisibleLayers(currentCellWidth, containerWidth);
-            buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
+            var result = computeVisibleLayers(state.currentCellWidth, containerWidth);
+            buildTable(state.currentCellWidth, result.indices, state.currentMaxRows, result.stride);
 
             // Apply chart height to SVG element (use default if not explicitly set)
-            var svg = document.getElementById(uid + "_chart");
+            var svg = dom.chart();
             if (svg) {
                 svg.setAttribute("height", getActualChartHeight());
             }
@@ -2419,7 +2586,7 @@ var LogitLensWidget = (function() {
 
             // Helper to get current font sizes from computed style
             function getCurrentFontSizes() {
-                var widgetEl = document.getElementById(uid);
+                var widgetEl = dom.widget();
                 if (!widgetEl) return { title: '', content: '' };
                 var style = getComputedStyle(widgetEl);
                 return {
@@ -2433,7 +2600,7 @@ var LogitLensWidget = (function() {
             var lastFontSizes = getCurrentFontSizes();
             var styleObserver = new MutationObserver(function() {
                 // Stop if widget was removed from DOM
-                var widgetEl = document.getElementById(uid);
+                var widgetEl = dom.widget();
                 if (!widgetEl) {
                     styleObserver.disconnect();
                     return;
@@ -2441,7 +2608,7 @@ var LogitLensWidget = (function() {
                 var needsRebuild = false;
 
                 // Check dark mode (only if in auto-detect mode)
-                if (darkModeOverride === null) {
+                if (state.darkModeOverride === null) {
                     var currentDarkMode = isDarkMode();
                     if (currentDarkMode !== lastDetectedDarkMode) {
                         lastDetectedDarkMode = currentDarkMode;
@@ -2458,7 +2625,7 @@ var LogitLensWidget = (function() {
                 }
 
                 if (needsRebuild) {
-                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
+                    buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows, state.currentStride);
                 }
             });
             // Observe document root for style/class changes
@@ -2474,6 +2641,10 @@ var LogitLensWidget = (function() {
                 });
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // PUBLIC API
+            // ═══════════════════════════════════════════════════════════════
+
             // Build the public interface object that will be returned
             // This same object is used for linking, so references are consistent
             var publicInterface = {
@@ -2482,8 +2653,8 @@ var LogitLensWidget = (function() {
                 getColumnState: getColumnState,
                 setColumnState: setColumnState,
                 linkColumnsTo: function(otherWidget) {
-                    if (linkedWidgets.indexOf(otherWidget) < 0) {
-                        linkedWidgets.push(otherWidget);
+                    if (state.linkedWidgets.indexOf(otherWidget) < 0) {
+                        state.linkedWidgets.push(otherWidget);
                     }
                     // Also link the other direction using our public interface
                     if (otherWidget.linkColumnsTo) {
@@ -2496,18 +2667,18 @@ var LogitLensWidget = (function() {
                     otherWidget.setColumnState(getColumnState(), true);
                 },
                 unlinkColumns: function(otherWidget) {
-                    var idx = linkedWidgets.indexOf(otherWidget);
+                    var idx = state.linkedWidgets.indexOf(otherWidget);
                     if (idx >= 0) {
-                        linkedWidgets.splice(idx, 1);
+                        state.linkedWidgets.splice(idx, 1);
                     }
                 },
-                _getLinkedWidgets: function() { return linkedWidgets; },
+                _getLinkedWidgets: function() { return state.linkedWidgets; },
                 setDarkMode: function(enabled) {
                     // null = auto-detect from CSS, true/false = override
-                    darkModeOverride = enabled === null ? null : !!enabled;
+                    state.darkModeOverride = enabled === null ? null : !!enabled;
                     applyDarkMode(isDarkMode());
                     // Rebuild table to apply new heatmap colors
-                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
+                    buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows, state.currentStride);
                 },
                 getDarkMode: function() {
                     // Returns effective dark mode state (resolved from override or CSS)
@@ -2516,7 +2687,7 @@ var LogitLensWidget = (function() {
                 setFontSize: function(options) {
                     // Set font size overrides on the widget element
                     // options: { title: '18px', content: '12px' } or null to clear
-                    var widgetEl = document.getElementById(uid);
+                    var widgetEl = dom.widget();
                     if (!widgetEl) return;
                     if (options === null || (typeof options === 'object' && !options.title && !options.content)) {
                         // Clear overrides - remove inline custom properties
@@ -2527,11 +2698,11 @@ var LogitLensWidget = (function() {
                         if (options.content) widgetEl.style.setProperty('--ll-content-size', options.content);
                     }
                     // Rebuild to apply changes
-                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
+                    buildTable(state.currentCellWidth, state.currentVisibleIndices, state.currentMaxRows, state.currentStride);
                 },
                 getFontSize: function() {
                     // Returns current computed font sizes
-                    var widgetEl = document.getElementById(uid);
+                    var widgetEl = dom.widget();
                     if (!widgetEl) return { title: null, content: null };
                     var style = getComputedStyle(widgetEl);
                     return {

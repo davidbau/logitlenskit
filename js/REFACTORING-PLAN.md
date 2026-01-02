@@ -200,13 +200,13 @@ function updateState(changes) {
 ## Implementation Order
 
 1. [x] Write this plan
-2. [ ] Step 1: Remove dead code
-3. [ ] Step 2: Extract state object
-4. [ ] Step 3: Extract DOM helpers
-5. [ ] Step 4: Add section comments
-6. [ ] Step 5: Document data model
-7. [ ] Step 6: Break up drawAllTrajectories
-8. [ ] Step 7: Create render pipeline
+2. [x] Step 1: Remove dead code
+3. [x] Step 2: Extract state object
+4. [x] Step 3: Extract DOM helpers
+5. [x] Step 4: Add section comments
+6. [x] Step 5: Document data model
+7. [x] Step 6: Break up drawAllTrajectories (added sub-section comments, extracted niceMax/formatPct utilities)
+8. [x] Step 7: Create render pipeline (added render() function and documentation)
 
 After each step: run tests to verify no functionality changed.
 
