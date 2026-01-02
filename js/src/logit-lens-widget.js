@@ -183,7 +183,8 @@ var LogitLensWidget = (function() {
             var nLayers = widgetData.layers.length;
 
             // UI state variables - can be restored from uiState parameter
-            var chartHeight = (uiState && uiState.chartHeight) || 140;
+            // chartHeight: null means "use default based on font size"
+            var chartHeight = (uiState && uiState.chartHeight) || null;
             var inputTokenWidth = (uiState && uiState.inputTokenWidth) || 100;
 
             var minChartHeight = 60;
@@ -197,6 +198,28 @@ var LogitLensWidget = (function() {
                 var match = sizeStr.match(/^([\d.]+)px$/);
                 return match ? parseFloat(match[1]) : 10;
             }
+            // Default chart height scales with row height (or font size as fallback)
+            function getDefaultChartHeight() {
+                var fontSize = getContentFontSizePx();
+                var topMargin = Math.max(10, fontSize + 4);
+                var bottomMargin = Math.max(25, fontSize + 8);
+                // Try to measure actual row height from table
+                var table = document.getElementById(uid + "_table");
+                var rowHeight = fontSize * 2;  // fallback estimate
+                if (table) {
+                    var rows = table.querySelectorAll("tr");
+                    if (rows.length >= 2) {
+                        rowHeight = rows[1].getBoundingClientRect().height || rowHeight;
+                    }
+                }
+                // Chart inner area = ~6 table rows worth of height
+                var innerHeight = rowHeight * 6;
+                return topMargin + innerHeight + bottomMargin;
+            }
+            // Get actual chart height (use default if not explicitly set)
+            function getActualChartHeight() {
+                return chartHeight !== null ? chartHeight : getDefaultChartHeight();
+            }
             // Dynamic margins that scale with font size
             function getChartMargin() {
                 var fontSize = getContentFontSizePx();
@@ -209,7 +232,7 @@ var LogitLensWidget = (function() {
             }
             function getChartInnerHeight() {
                 var m = getChartMargin();
-                return chartHeight - m.top - m.bottom;
+                return getActualChartHeight() - m.top - m.bottom;
             }
             var minCellWidth = 10;
             var maxCellWidth = 200;
@@ -1161,8 +1184,9 @@ var LogitLensWidget = (function() {
                 if (!xAxisDrag.active) return;
                 var delta = e.clientY - xAxisDrag.startY;
                 var newHeight = Math.max(minChartHeight, Math.min(maxChartHeight, xAxisDrag.startHeight + delta));
-                if (Math.abs(newHeight - chartHeight) > 2) {
-                    chartHeight = newHeight;
+                var currentHeight = getActualChartHeight();
+                if (Math.abs(newHeight - currentHeight) > 2) {
+                    chartHeight = newHeight;  // Explicitly set (no longer using default)
                     var svg = document.getElementById(uid + "_chart");
                     svg.setAttribute("height", chartHeight);
                     var chartInnerWidth = updateChartDimensions();
@@ -1514,7 +1538,7 @@ var LogitLensWidget = (function() {
                 });
                 xAxisGroup.addEventListener("mousedown", function(e) {
                     closePopup();
-                    xAxisDrag = { active: true, startY: e.clientY, startHeight: chartHeight };
+                    xAxisDrag = { active: true, startY: e.clientY, startHeight: getActualChartHeight() };
                     xAxis.setAttribute("stroke", "rgba(33, 150, 243, 0.6)");
                     e.preventDefault();
                     e.stopPropagation();
@@ -2319,10 +2343,10 @@ var LogitLensWidget = (function() {
             var result = computeVisibleLayers(currentCellWidth, containerWidth);
             buildTable(currentCellWidth, result.indices, currentMaxRows, result.stride);
 
-            // Apply restored chart height to SVG element
+            // Apply chart height to SVG element (use default if not explicitly set)
             var svg = document.getElementById(uid + "_chart");
             if (svg) {
-                svg.setAttribute("height", chartHeight);
+                svg.setAttribute("height", getActualChartHeight());
             }
 
             // Apply dark mode based on override or auto-detection

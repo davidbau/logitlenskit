@@ -79,8 +79,11 @@ describe('State Serialization', () => {
         expect(state.cellWidth).toBeGreaterThan(20);
         expect(state.cellWidth).toBeLessThan(200);
         expect(state.inputTokenWidth).toBeGreaterThan(50);
-        expect(state.chartHeight).toBeGreaterThan(50);
-        expect(state.chartHeight).toBeLessThan(500);
+        // chartHeight can be null (auto-sized based on font/row height) or an explicit value
+        if (state.chartHeight !== null) {
+            expect(state.chartHeight).toBeGreaterThan(50);
+            expect(state.chartHeight).toBeLessThan(500);
+        }
     });
 });
 
