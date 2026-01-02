@@ -25,7 +25,7 @@ var LogitLensWidget = (function() {
                 -webkit-user-select: none;
                 user-select: none;
             }
-            #${uid} .ll-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+            #${uid} .ll-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; padding: 2px 0; }
             #${uid} .color-mode-btn {
                 display: inline-block; padding: 0; background: white;
                 border-radius: 4px; font-size: 16px; cursor: pointer; color: #333;
