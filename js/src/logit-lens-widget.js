@@ -126,10 +126,10 @@ var LogitLensWidget = (function() {
             #${uid}.dark-mode .color-mode-btn:hover { background: #3d3d3d; }
             #${uid}.dark-mode .ll-table td, #${uid}.dark-mode .ll-table th { border-color: #444; }
             #${uid}.dark-mode .pred-cell { color: #e0e0e0; }
-            #${uid}.dark-mode .pred-cell.selected { background: #5c5c00 !important; color: #fff !important; }
+            #${uid}.dark-mode .pred-cell.selected { background: #4a4a00 !important; color: #fff !important; }
             #${uid}.dark-mode .input-token { background: #2d2d2d; color: #e0e0e0; }
             #${uid}.dark-mode .input-token:hover { background: #3d3d3d; }
-            #${uid}.dark-mode tr:has(.input-token:hover) .input-token { background: #5c5c00 !important; color: #fff !important; }
+            #${uid}.dark-mode tr:has(.input-token:hover) .input-token { background: #4a4a00 !important; color: #fff !important; }
             #${uid}.dark-mode .layer-hdr { background: #2d2d2d; color: #aaa; }
             #${uid}.dark-mode .corner-hdr { background: #1e1e1e; color: #aaa; }
             #${uid}.dark-mode .chart-container { background: #252525; }
@@ -595,10 +595,10 @@ var LogitLensWidget = (function() {
 
                     html += "<tr>";
 
-                    // Input token cell with optional yellow background for pinned rows
+                    // Input token cell with optional highlight background for pinned rows
                     var inputStyle = "width:" + inputTokenWidth + "px; max-width:" + inputTokenWidth + "px;";
                     if (isPinnedRow) {
-                        inputStyle += " background: #fff59d;";
+                        inputStyle += darkMode ? " background: #4a4a00; color: #fff;" : " background: #fff59d;";
                     }
 
                     html += '<td class="input-token' + (isPinnedRow ? ' pinned-row' : '') + '" data-pos="' + pos + '" title="' + escapeHtml(tok) + '" style="' + inputStyle + '">';
