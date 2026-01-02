@@ -819,7 +819,7 @@ var LogitLensWidget = (function() {
                 var input = document.createElement("input");
                 input.type = "text";
                 input.value = currentText;
-                input.style.cssText = "font-size: 16px; font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;";
+                input.style.cssText = "font-size: 16px; font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;" + (darkMode ? " background: #1e1e1e; color: #e0e0e0;" : "");
 
                 titleTextEl.innerHTML = "";
                 titleTextEl.appendChild(input);
