@@ -11,13 +11,17 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "build": "esbuild src/logit-lens-widget.js --bundle --minify --outfile=dist/logit-lens-widget.min.js --global-name=LogitLensWidgetExport",
-    "lint": "eslint src/ tests/"
+    "lint": "eslint src/ tests/",
+    "callgraph": "node build/build-callgraph.js"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0",
     "esbuild": "^0.19.0",
-    "eslint": "^8.50.0"
+    "eslint": "^8.50.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "acorn-loose": "^8.5.2"
+  }
 }
