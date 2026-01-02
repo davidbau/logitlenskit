@@ -1535,16 +1535,21 @@ var LogitLensWidget = (function() {
                 }
 
                 // Add clip-path to clip trajectories at left edge when zoomed
-                // Extend left to include y-axis tick label (at x=-5)
+                // Extend left and up to include y-axis tick label (scales with font size)
                 var clipId = uid + "_chart_clip";
                 var defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
                 var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                 clipPath.setAttribute("id", clipId);
                 var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                clipRect.setAttribute("x", "-35");
-                clipRect.setAttribute("y", "-5");
-                clipRect.setAttribute("width", chartInnerWidth + 35);
-                clipRect.setAttribute("height", chartInnerHeight + 30);
+                // Left extent: room for "100.00%" label (~7 chars at 0.6em each) plus padding
+                var clipFontSize = getContentFontSizePx();
+                var clipLeftExtent = 10 + clipFontSize * 4;
+                // Top extent: room for tick label text above y=0
+                var clipTopExtent = clipFontSize;
+                clipRect.setAttribute("x", -clipLeftExtent);
+                clipRect.setAttribute("y", -clipTopExtent);
+                clipRect.setAttribute("width", chartInnerWidth + clipLeftExtent);
+                clipRect.setAttribute("height", chartInnerHeight + clipTopExtent + chartMargin.bottom);
                 clipPath.appendChild(clipRect);
                 defs.appendChild(clipPath);
                 svg.appendChild(defs);
@@ -1559,9 +1564,9 @@ var LogitLensWidget = (function() {
                 trajClipPath.setAttribute("id", trajClipId);
                 var trajClipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 trajClipRect.setAttribute("x", "0");
-                trajClipRect.setAttribute("y", "-5");
+                trajClipRect.setAttribute("y", -clipTopExtent);
                 trajClipRect.setAttribute("width", chartInnerWidth);
-                trajClipRect.setAttribute("height", chartInnerHeight + 10);
+                trajClipRect.setAttribute("height", chartInnerHeight + clipTopExtent + 10);
                 trajClipPath.appendChild(trajClipRect);
                 defs.appendChild(trajClipPath);
 
