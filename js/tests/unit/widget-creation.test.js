@@ -292,3 +292,70 @@ describe('LogitLensWidget Font Size', () => {
         expect(cellsAfter).toBe(cellsBefore);
     });
 });
+
+describe('LogitLensWidget V2 Data Format', () => {
+    let container;
+    let sampleDataV2;
+
+    beforeEach(() => {
+        container = createMockContainer();
+        sampleDataV2 = loadSampleData('sample-data-v2.json');
+    });
+
+    afterEach(() => {
+        cleanupContainer(container);
+    });
+
+    test('should create widget with v2 compact format', () => {
+        const widget = LogitLensWidget('#test-container', sampleDataV2);
+        expect(widget).toBeDefined();
+        expect(widget.uid).toMatch(/^ll_interact_\d+$/);
+    });
+
+    test('should render correct number of rows with v2 format', () => {
+        LogitLensWidget('#test-container', sampleDataV2);
+        const inputTokenCells = container.querySelectorAll('.input-token');
+        expect(inputTokenCells.length).toBe(sampleDataV2.input.length);
+    });
+
+    test('should render correct number of layers with v2 format', () => {
+        LogitLensWidget('#test-container', sampleDataV2);
+        const headerCells = container.querySelectorAll('.layer-hdr');
+        expect(headerCells.length).toBe(sampleDataV2.layers.length);
+    });
+
+    test('should display correct token content with v2 format', () => {
+        LogitLensWidget('#test-container', sampleDataV2);
+        const inputTokenCells = container.querySelectorAll('.input-token');
+        // First input token should be "The"
+        expect(inputTokenCells[0].textContent).toContain('The');
+    });
+
+    test('v2 format should produce same structure as v1', () => {
+        const sampleDataV1 = loadSampleData('sample-data-small.json');
+
+        const widget1 = LogitLensWidget('#test-container', sampleDataV1);
+        const container2 = createMockContainer('test-container-2');
+        const widget2 = LogitLensWidget('#test-container-2', sampleDataV2);
+
+        // Both should render same number of rows and layers
+        const rows1 = container.querySelectorAll('.input-token').length;
+        const rows2 = container2.querySelectorAll('.input-token').length;
+        expect(rows1).toBe(rows2);
+
+        const layers1 = container.querySelectorAll('.layer-hdr').length;
+        const layers2 = container2.querySelectorAll('.layer-hdr').length;
+        expect(layers1).toBe(layers2);
+
+        cleanupContainer(container2);
+    });
+
+    test('getState should work with v2 format data', () => {
+        const widget = LogitLensWidget('#test-container', sampleDataV2);
+        const state = widget.getState();
+
+        expect(state).toHaveProperty('cellWidth');
+        expect(state).toHaveProperty('colorModes');
+        expect(state).toHaveProperty('pinnedGroups');
+    });
+});

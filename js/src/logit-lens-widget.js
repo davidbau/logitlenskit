@@ -1,6 +1,61 @@
 var LogitLensWidget = (function() {
     var instanceCount = 0;
 
+    // Normalize data from compact format (v2) to internal format
+    function normalizeData(data) {
+        // Already in v1 format (has cells)
+        if (data.cells) {
+            // Just ensure 'tokens' exists (might be 'input' in hybrid)
+            if (!data.tokens && data.input) {
+                data.tokens = data.input;
+            }
+            return data;
+        }
+
+        // V2 compact format: convert to v1
+        var nLayers = data.layers.length;
+        var nPositions = data.input.length;
+        var cells = [];
+
+        for (var pos = 0; pos < nPositions; pos++) {
+            var posData = [];
+            var trackedAtPos = data.tracked[pos];
+
+            for (var li = 0; li < nLayers; li++) {
+                var topkTokens = data.topk[li][pos];
+                var topkList = [];
+
+                for (var ki = 0; ki < topkTokens.length; ki++) {
+                    var tok = topkTokens[ki];
+                    var trajectory = trackedAtPos[tok] || [];
+                    var prob = trajectory[li] || 0;
+                    topkList.push({
+                        token: tok,
+                        prob: prob,
+                        trajectory: trajectory
+                    });
+                }
+
+                // Top-1 is first in topk
+                var top1 = topkList[0] || { token: "", prob: 0, trajectory: [] };
+                posData.push({
+                    token: top1.token,
+                    prob: top1.prob,
+                    trajectory: top1.trajectory,
+                    topk: topkList
+                });
+            }
+            cells.push(posData);
+        }
+
+        return {
+            layers: data.layers,
+            tokens: data.input,
+            cells: cells,
+            meta: data.meta || {}
+        };
+    }
+
     return function(containerArg, widgetData, uiState) {
         var uid = "ll_interact_" + instanceCount++;
         var container;
@@ -13,6 +68,9 @@ var LogitLensWidget = (function() {
             console.error("Container not found:", containerArg);
             return;
         }
+
+        // Normalize data format (convert v2 compact to v1 internal)
+        widgetData = normalizeData(widgetData);
 
         // Inject scoped CSS
         var style = document.createElement("style");
