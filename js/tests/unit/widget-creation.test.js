@@ -126,10 +126,10 @@ describe('LogitLensWidget Dark Mode', () => {
         cleanupContainer(container);
     });
 
-    test('darkMode should default to false', () => {
+    test('darkMode should default to null (auto-detect from CSS)', () => {
         const widget = LogitLensWidget('#test-container', sampleData);
         const state = widget.getState();
-        expect(state.darkMode).toBe(false);
+        expect(state.darkMode).toBe(null);
     });
 
     test('darkMode should be restorable from initial state', () => {

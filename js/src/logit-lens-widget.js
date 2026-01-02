@@ -218,7 +218,17 @@ var LogitLensWidget = (function() {
             var heatmapNextColor = (uiState && uiState.heatmapNextColor) || null; // null = default blue gradient
             var colorPickerTarget = null; // { type: 'trajectory', groupIdx: N } or { type: 'heatmap' } or { type: 'heatmapNext' }
             var lastPinnedGroupIndex = (uiState && uiState.lastPinnedGroupIndex !== undefined) ? uiState.lastPinnedGroupIndex : -1;
-            var darkMode = (uiState && uiState.darkMode) || false;
+            // Dark mode: null = auto-detect from CSS color-scheme, true/false = override
+            var darkModeOverride = (uiState && uiState.darkMode !== undefined) ? uiState.darkMode : null;
+
+            // Get effective dark mode state (checks override, falls back to CSS detection)
+            function isDarkMode() {
+                if (darkModeOverride !== null) {
+                    return darkModeOverride;
+                }
+                // Auto-detect from CSS color-scheme on container or ancestors
+                return getComputedStyle(container).colorScheme === 'dark';
+            }
 
             // Pinned rows: array of {pos: number, lineStyle: object}
             var lineStyles = [
@@ -460,7 +470,7 @@ var LogitLensWidget = (function() {
                     var b = parseInt(hex.substr(4, 2), 16);
                     var blend = prob;
 
-                    if (darkMode) {
+                    if (isDarkMode()) {
                         // Dark mode: blend from dark background (#1e1e1e = 30,30,30) to glowing color
                         var darkBase = 30;
                         var rr = Math.round(darkBase + (r - darkBase) * blend);
@@ -476,7 +486,7 @@ var LogitLensWidget = (function() {
                     }
                 }
                 // Default gradient (no baseColor specified)
-                if (darkMode) {
+                if (isDarkMode()) {
                     // Dark mode: glow from dark to blue
                     var rVal = Math.round(30 + (100 - 30) * prob * 0.8);
                     var gVal = Math.round(30 + (150 - 30) * prob * 0.6);
@@ -598,7 +608,7 @@ var LogitLensWidget = (function() {
                     // Input token cell with optional highlight background for pinned rows
                     var inputStyle = "width:" + inputTokenWidth + "px; max-width:" + inputTokenWidth + "px;";
                     if (isPinnedRow) {
-                        inputStyle += darkMode ? " background: #4a4a00; color: #fff;" : " background: #fff59d;";
+                        inputStyle += isDarkMode() ? " background: #4a4a00; color: #fff;" : " background: #fff59d;";
                     }
 
                     html += '<td class="input-token' + (isPinnedRow ? ' pinned-row' : '') + '" data-pos="' + pos + '" title="' + escapeHtml(tok) + '" style="' + inputStyle + '">';
@@ -606,7 +616,7 @@ var LogitLensWidget = (function() {
                     // Mini SVG line style indicator for pinned rows (wider to show dash-dot pattern)
                     if (isPinnedRow) {
                         html += '<svg width="20" height="10" style="vertical-align: middle; margin-right: 2px;">';
-                        html += '<line x1="0" y1="5" x2="20" y2="5" stroke="' + (darkMode ? '#ccc' : '#333') + '" stroke-width="1.5"';
+                        html += '<line x1="0" y1="5" x2="20" y2="5" stroke="' + (isDarkMode() ? '#ccc' : '#333') + '" stroke-width="1.5"';
                         if (rowLineStyle.dash) {
                             html += ' stroke-dasharray="' + rowLineStyle.dash + '"';
                         }
@@ -642,9 +652,9 @@ var LogitLensWidget = (function() {
                             });
                         }
 
-                        var color = colorModes.length === 0 ? (darkMode ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
+                        var color = colorModes.length === 0 ? (isDarkMode() ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
                         var textColor;
-                        if (darkMode) {
+                        if (isDarkMode()) {
                             // Dark mode: light text always (glowing colors on dark background)
                             textColor = colorModes.length === 0 ? "#e0e0e0" : (cellProb < 0.7 ? "#e0e0e0" : "#fff");
                         } else {
@@ -819,7 +829,7 @@ var LogitLensWidget = (function() {
                 var input = document.createElement("input");
                 input.type = "text";
                 input.value = currentText;
-                input.style.cssText = "font-size: 16px; font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;" + (darkMode ? " background: #1e1e1e; color: #e0e0e0;" : "");
+                input.style.cssText = "font-size: 16px; font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;" + (isDarkMode() ? " background: #1e1e1e; color: #e0e0e0;" : "");
 
                 titleTextEl.innerHTML = "";
                 titleTextEl.appendChild(input);
@@ -1605,7 +1615,7 @@ var LogitLensWidget = (function() {
                         label.setAttribute("y", chartInnerHeight + 12);
                         label.setAttribute("text-anchor", "middle");
                         label.setAttribute("font-size", "10");
-                        label.setAttribute("fill", darkMode ? "#aaa" : "#666");
+                        label.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                         label.textContent = widgetData.layers[layerIdx];
                         tickGroup.appendChild(label);
 
@@ -1744,7 +1754,7 @@ var LogitLensWidget = (function() {
                     tickLabel.setAttribute("x", -5); tickLabel.setAttribute("y", tickY + 3);
                     tickLabel.setAttribute("text-anchor", "end");
                     tickLabel.setAttribute("font-size", "9");
-                    tickLabel.setAttribute("fill", darkMode ? "#aaa" : "#666");
+                    tickLabel.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                     tickLabel.textContent = formatPct(maxProb);
                     g.appendChild(tickLabel);
                 }
@@ -1845,7 +1855,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "25"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
+                        text.setAttribute("font-size", "10"); text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = visualizeSpaces(rowToken);
                         legendItem.appendChild(text);
@@ -1902,7 +1912,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                        text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#ddd" : "#333");
+                        text.setAttribute("font-size", "10"); text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = groupLabel;
                         legendItem.appendChild(text);
@@ -1951,7 +1961,7 @@ var LogitLensWidget = (function() {
 
                     var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                    text.setAttribute("font-size", "10"); text.setAttribute("fill", darkMode ? "#aaa" : "#666");
+                    text.setAttribute("font-size", "10"); text.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                     text.setAttribute("clip-path", "url(#" + clipId + ")");
                     text.textContent = visualizeSpaces(hoverLabel);
                     legendItem.appendChild(text);
@@ -2252,18 +2262,20 @@ var LogitLensWidget = (function() {
                     }),
                     heatmapBaseColor: heatmapBaseColor,
                     heatmapNextColor: heatmapNextColor,
-                    darkMode: darkMode
+                    darkMode: darkModeOverride
                 };
             }
 
-            // Function to apply or remove dark mode class
+            // Function to apply or remove dark mode class and color-scheme
             function applyDarkMode(enabled) {
                 var widgetEl = document.getElementById(uid);
                 if (widgetEl) {
                     if (enabled) {
                         widgetEl.classList.add("dark-mode");
+                        widgetEl.style.colorScheme = "dark";
                     } else {
                         widgetEl.classList.remove("dark-mode");
+                        widgetEl.style.colorScheme = "";
                     }
                 }
             }
@@ -2279,9 +2291,32 @@ var LogitLensWidget = (function() {
                 svg.setAttribute("height", chartHeight);
             }
 
-            // Apply dark mode if restored from state
-            if (darkMode) {
-                applyDarkMode(true);
+            // Apply dark mode based on override or auto-detection
+            applyDarkMode(isDarkMode());
+
+            // Watch for color-scheme changes on ancestors (for auto-detection mode)
+            var lastDetectedDarkMode = isDarkMode();
+            var colorSchemeObserver = new MutationObserver(function() {
+                // Only react if in auto-detect mode (no override)
+                if (darkModeOverride !== null) return;
+                var currentDarkMode = isDarkMode();
+                if (currentDarkMode !== lastDetectedDarkMode) {
+                    lastDetectedDarkMode = currentDarkMode;
+                    applyDarkMode(currentDarkMode);
+                    buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
+                }
+            });
+            // Observe document root for style/class changes that might affect color-scheme
+            colorSchemeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['style', 'class']
+            });
+            // Also observe body if it exists
+            if (document.body) {
+                colorSchemeObserver.observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ['style', 'class']
+                });
             }
 
             // Build the public interface object that will be returned
@@ -2313,13 +2348,15 @@ var LogitLensWidget = (function() {
                 },
                 _getLinkedWidgets: function() { return linkedWidgets; },
                 setDarkMode: function(enabled) {
-                    darkMode = !!enabled;
-                    applyDarkMode(darkMode);
+                    // null = auto-detect from CSS, true/false = override
+                    darkModeOverride = enabled === null ? null : !!enabled;
+                    applyDarkMode(isDarkMode());
                     // Rebuild table to apply new heatmap colors
                     buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
                 },
                 getDarkMode: function() {
-                    return darkMode;
+                    // Returns effective dark mode state (resolved from override or CSS)
+                    return isDarkMode();
                 }
             };
 
