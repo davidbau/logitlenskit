@@ -18,8 +18,6 @@ var LogitLensWidget = (function() {
         var style = document.createElement("style");
         style.textContent = `
             #${uid} {
-                --ll-title-size: 16px;
-                --ll-content-size: 10px;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 margin: 20px 0;
                 padding: 0;
@@ -27,25 +25,25 @@ var LogitLensWidget = (function() {
                 -webkit-user-select: none;
                 user-select: none;
             }
-            #${uid} .ll-title { font-size: var(--ll-title-size); font-weight: 600; margin-bottom: 8px; padding: 2px 0; }
+            #${uid} .ll-title { font-size: var(--ll-title-size, 16px); font-weight: 600; margin-bottom: 8px; padding: 2px 0; }
             #${uid} .color-mode-btn {
                 display: inline-block; padding: 0; background: white;
-                border-radius: 4px; font-size: var(--ll-title-size); cursor: pointer; color: #333;
+                border-radius: 4px; font-size: var(--ll-title-size, 16px); cursor: pointer; color: #333;
                 border: none;
             }
             #${uid} .color-mode-btn:hover { background: #f5f5f5; }
-            #${uid} .ll-table { border-collapse: collapse; font-size: var(--ll-content-size); table-layout: fixed; }
+            #${uid} .ll-table { border-collapse: collapse; font-size: var(--ll-content-size, 10px); table-layout: fixed; }
             #${uid} .ll-table td, #${uid} .ll-table th { border: 1px solid #ddd; box-sizing: border-box; }
             #${uid} .pred-cell {
                 height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-                padding: 2px 4px; font-family: monospace; font-size: calc(var(--ll-content-size) * 0.9); cursor: pointer; position: relative;
+                padding: 2px 4px; font-family: monospace; font-size: calc(var(--ll-content-size, 10px) * 0.9); cursor: pointer; position: relative;
             }
             #${uid} .pred-cell:hover { outline: 2px solid #e91e63; outline-offset: -1px; }
             #${uid} .pred-cell.selected { background: #fff59d !important; color: #333 !important; }
             #${uid} .input-token {
                 padding: 2px 8px; text-align: right; font-weight: 500; color: #333;
                 background: #f5f5f5; white-space: nowrap; overflow: hidden;
-                text-overflow: ellipsis; font-family: monospace; font-size: var(--ll-content-size); cursor: pointer;
+                text-overflow: ellipsis; font-family: monospace; font-size: var(--ll-content-size, 10px); cursor: pointer;
                 position: relative;
             }
             #${uid} .input-token:hover { background: #e8e8e8; }
@@ -53,7 +51,7 @@ var LogitLensWidget = (function() {
             #${uid} tr:has(.input-token:hover) .input-token { background: #fff59d !important; }
             #${uid} .layer-hdr {
                 padding: 4px 2px; text-align: center; font-weight: 500; color: #666;
-                background: #f5f5f5; font-size: calc(var(--ll-content-size) * 0.9); position: relative;
+                background: #f5f5f5; font-size: calc(var(--ll-content-size, 10px) * 0.9); position: relative;
             }
             #${uid} .corner-hdr { padding: 4px 8px; text-align: right; font-weight: 500; color: #666; background: white; position: relative; }
             #${uid} .chart-container { margin-top: 8px; background: #fafafa; border-radius: 4px; padding: 8px 0; }
@@ -64,13 +62,13 @@ var LogitLensWidget = (function() {
                 z-index: 100; min-width: 180px; max-width: 280px;
             }
             #${uid} .popup.visible { display: block; }
-            #${uid} .popup-header { font-weight: 600; font-size: calc(var(--ll-title-size) * 0.8); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
-            #${uid} .popup-header code { font-weight: 400; font-size: calc(var(--ll-content-size) * 1.2); background: #f5f5f5; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
-            #${uid} .popup-close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #999; font-size: var(--ll-title-size); }
+            #${uid} .popup-header { font-weight: 600; font-size: calc(var(--ll-title-size, 16px) * 0.8); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
+            #${uid} .popup-header code { font-weight: 400; font-size: calc(var(--ll-content-size, 10px) * 1.2); background: #f5f5f5; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
+            #${uid} .popup-close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #999; font-size: var(--ll-title-size, 16px); }
             #${uid} .popup-close:hover { color: #333; }
             #${uid} .topk-item {
                 padding: 4px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer;
-                display: flex; justify-content: space-between; font-size: calc(var(--ll-content-size) * 1.1);
+                display: flex; justify-content: space-between; font-size: calc(var(--ll-content-size, 10px) * 1.1);
             }
             #${uid} .topk-item:hover { background: #f0f0f0; }
             #${uid} .topk-item.active { background: #f0f0f0; }
@@ -98,7 +96,7 @@ var LogitLensWidget = (function() {
                 cursor: ew-resize; background: transparent;
             }
             #${uid} .resize-handle-right:hover, #${uid} .resize-handle-right.dragging { background: rgba(33, 150, 243, 0.4); }
-            #${uid} .resize-hint { font-size: calc(var(--ll-content-size) * 0.9); color: #999; margin-top: 4px; cursor: default; }
+            #${uid} .resize-hint { font-size: calc(var(--ll-content-size, 10px) * 0.9); color: #999; margin-top: 4px; cursor: default; }
             #${uid} .resize-hint-extra { display: none; }
             #${uid}.show-all-handles .resize-handle,
             #${uid}.show-all-handles .resize-handle-input,
@@ -108,7 +106,7 @@ var LogitLensWidget = (function() {
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 200; min-width: 150px;
             }
             #${uid} .color-menu.visible { display: block; }
-            #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: calc(var(--ll-content-size) * 1.2); display: flex; align-items: stretch; }
+            #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: calc(var(--ll-content-size, 10px) * 1.2); display: flex; align-items: stretch; }
             #${uid} .color-menu-item:hover, #${uid} .color-menu-item.picking { background: #f0f0f0; }
             #${uid} .color-menu-item .color-menu-label { padding: 8px 12px 8px 0; flex: 1; }
             #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: 0; border-left: 1px solid #ccc; background: transparent; cursor: pointer; opacity: 0; transition: opacity 0.15s; padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
@@ -831,7 +829,7 @@ var LogitLensWidget = (function() {
                 var input = document.createElement("input");
                 input.type = "text";
                 input.value = currentText;
-                input.style.cssText = "font-size: var(--ll-title-size); font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;" + (isDarkMode() ? " background: #1e1e1e; color: #e0e0e0;" : "");
+                input.style.cssText = "font-size: var(--ll-title-size, 16px); font-weight: 600; font-family: inherit; border: 1px solid #2196F3; border-radius: 3px; padding: 1px 4px; outline: none; width: " + Math.max(200, titleTextEl.offsetWidth) + "px;" + (isDarkMode() ? " background: #1e1e1e; color: #e0e0e0;" : "");
 
                 titleTextEl.innerHTML = "";
                 titleTextEl.appendChild(input);
@@ -1351,7 +1349,7 @@ var LogitLensWidget = (function() {
                 var firstToken = cellData.topk[0].token;
                 var firstIsPinned = findGroupForToken(firstToken) >= 0;
                 if (firstIsPinned && hasSimilarTokensInList(cellData.topk, firstToken)) {
-                    contentHtml += '<div style="font-size: var(--ll-content-size); font-style: italic; color: #666; margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">Shift-click to group tokens</div>';
+                    contentHtml += '<div style="font-size: var(--ll-content-size, 10px); font-style: italic; color: #666; margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">Shift-click to group tokens</div>';
                 }
 
                 document.getElementById(uid + "_popup_content").innerHTML = contentHtml;
@@ -1616,7 +1614,7 @@ var LogitLensWidget = (function() {
                         label.setAttribute("x", x);
                         label.setAttribute("y", chartInnerHeight + 12);
                         label.setAttribute("text-anchor", "middle");
-                        label.style.fontSize = "var(--ll-content-size)";
+                        label.style.fontSize = "var(--ll-content-size, 10px)";
                         label.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                         label.textContent = widgetData.layers[layerIdx];
                         tickGroup.appendChild(label);
@@ -1697,7 +1695,7 @@ var LogitLensWidget = (function() {
                 yLabel.setAttribute("x", -chartInnerHeight / 2);
                 yLabel.setAttribute("y", -actualInputRight + 15);
                 yLabel.setAttribute("text-anchor", "middle");
-                yLabel.style.fontSize = "var(--ll-content-size)";
+                yLabel.style.fontSize = "var(--ll-content-size, 10px)";
                 yLabel.setAttribute("fill", "#666");
                 yLabel.setAttribute("transform", "rotate(-90)");
                 yLabel.textContent = "Probability";
@@ -1755,7 +1753,7 @@ var LogitLensWidget = (function() {
                     var tickLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     tickLabel.setAttribute("x", -5); tickLabel.setAttribute("y", tickY + 3);
                     tickLabel.setAttribute("text-anchor", "end");
-                    tickLabel.style.fontSize = "calc(var(--ll-content-size) * 0.9)";
+                    tickLabel.style.fontSize = "calc(var(--ll-content-size, 10px) * 0.9)";
                     tickLabel.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                     tickLabel.textContent = formatPct(maxProb);
                     g.appendChild(tickLabel);
@@ -1806,7 +1804,7 @@ var LogitLensWidget = (function() {
 
                     var titleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     titleText.setAttribute("x", "0"); titleText.setAttribute("y", "4");
-                    titleText.style.fontSize = "var(--ll-content-size)"; titleText.setAttribute("fill", group.color);
+                    titleText.style.fontSize = "var(--ll-content-size, 10px)"; titleText.setAttribute("fill", group.color);
                     titleText.setAttribute("font-weight", "600");
                     titleText.setAttribute("clip-path", "url(#" + titleClipId + ")");
                     titleText.textContent = groupLabel;
@@ -1832,7 +1830,7 @@ var LogitLensWidget = (function() {
                         var closeBtn = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         closeBtn.setAttribute("class", "legend-close");
                         closeBtn.setAttribute("x", "-12"); closeBtn.setAttribute("y", "4");
-                        closeBtn.style.fontSize = "var(--ll-title-size)"; closeBtn.setAttribute("fill", "#999");
+                        closeBtn.style.fontSize = "var(--ll-title-size, 16px)"; closeBtn.setAttribute("fill", "#999");
                         closeBtn.style.display = "none";
                         closeBtn.textContent = "\u00d7";
                         legendItem.appendChild(closeBtn);
@@ -1857,7 +1855,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "25"); text.setAttribute("y", "4");
-                        text.style.fontSize = "var(--ll-content-size)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
+                        text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = visualizeSpaces(rowToken);
                         legendItem.appendChild(text);
@@ -1892,7 +1890,7 @@ var LogitLensWidget = (function() {
                         var closeBtn = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         closeBtn.setAttribute("class", "legend-close");
                         closeBtn.setAttribute("x", "-12"); closeBtn.setAttribute("y", "4");
-                        closeBtn.style.fontSize = "var(--ll-title-size)"; closeBtn.setAttribute("fill", "#999");
+                        closeBtn.style.fontSize = "var(--ll-title-size, 16px)"; closeBtn.setAttribute("fill", "#999");
                         closeBtn.style.display = "none";
                         closeBtn.textContent = "\u00d7";
                         legendItem.appendChild(closeBtn);
@@ -1914,7 +1912,7 @@ var LogitLensWidget = (function() {
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                        text.style.fontSize = "var(--ll-content-size)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
+                        text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = groupLabel;
                         legendItem.appendChild(text);
@@ -1963,7 +1961,7 @@ var LogitLensWidget = (function() {
 
                     var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     text.setAttribute("x", "20"); text.setAttribute("y", "4");
-                    text.style.fontSize = "var(--ll-content-size)"; text.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
+                    text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                     text.setAttribute("clip-path", "url(#" + clipId + ")");
                     text.textContent = visualizeSpaces(hoverLabel);
                     legendItem.appendChild(text);
@@ -2296,13 +2294,24 @@ var LogitLensWidget = (function() {
             // Apply dark mode based on override or auto-detection
             applyDarkMode(isDarkMode());
 
+            // Helper to get current font sizes from computed style
+            function getCurrentFontSizes() {
+                var widgetEl = document.getElementById(uid);
+                if (!widgetEl) return { title: '', content: '' };
+                var style = getComputedStyle(widgetEl);
+                return {
+                    title: style.getPropertyValue('--ll-title-size'),
+                    content: style.getPropertyValue('--ll-content-size')
+                };
+            }
+
             // Watch for color-scheme and font size changes on ancestors
             var lastDetectedDarkMode = isDarkMode();
-            var lastTitleSize = getComputedStyle(container).getPropertyValue('--ll-title-size');
-            var lastContentSize = getComputedStyle(container).getPropertyValue('--ll-content-size');
+            var lastFontSizes = getCurrentFontSizes();
             var styleObserver = new MutationObserver(function() {
                 // Stop if widget was removed from DOM
-                if (!document.getElementById(uid)) {
+                var widgetEl = document.getElementById(uid);
+                if (!widgetEl) {
                     styleObserver.disconnect();
                     return;
                 }
@@ -2319,11 +2328,9 @@ var LogitLensWidget = (function() {
                 }
 
                 // Check font sizes
-                var currentTitleSize = getComputedStyle(container).getPropertyValue('--ll-title-size');
-                var currentContentSize = getComputedStyle(container).getPropertyValue('--ll-content-size');
-                if (currentTitleSize !== lastTitleSize || currentContentSize !== lastContentSize) {
-                    lastTitleSize = currentTitleSize;
-                    lastContentSize = currentContentSize;
+                var currentFontSizes = getCurrentFontSizes();
+                if (currentFontSizes.title !== lastFontSizes.title || currentFontSizes.content !== lastFontSizes.content) {
+                    lastFontSizes = currentFontSizes;
                     needsRebuild = true;
                 }
 
