@@ -2297,6 +2297,11 @@ var LogitLensWidget = (function() {
             // Watch for color-scheme changes on ancestors (for auto-detection mode)
             var lastDetectedDarkMode = isDarkMode();
             var colorSchemeObserver = new MutationObserver(function() {
+                // Stop if widget was removed from DOM
+                if (!document.getElementById(uid)) {
+                    colorSchemeObserver.disconnect();
+                    return;
+                }
                 // Only react if in auto-detect mode (no override)
                 if (darkModeOverride !== null) return;
                 var currentDarkMode = isDarkMode();

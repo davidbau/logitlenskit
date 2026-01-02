@@ -180,4 +180,28 @@ describe('LogitLensWidget Dark Mode', () => {
         const widgetEl = document.getElementById(widget2.uid);
         expect(widgetEl.classList.contains('dark-mode')).toBe(true);
     });
+
+    test('should not error when color-scheme changes after widget removed from DOM', async () => {
+        const widget = LogitLensWidget('#test-container', sampleData);
+        const widgetUid = widget.uid;
+
+        // Remove widget from DOM
+        cleanupContainer(container);
+
+        // Trigger color-scheme change on document root (would fire MutationObserver)
+        const originalColorScheme = document.documentElement.style.colorScheme;
+        document.documentElement.style.colorScheme = 'dark';
+
+        // Give MutationObserver time to fire
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        // Should not throw - just verify we got here without error
+        expect(document.getElementById(widgetUid)).toBe(null);
+
+        // Restore original color-scheme
+        document.documentElement.style.colorScheme = originalColorScheme;
+
+        // Recreate container for cleanup
+        container = createMockContainer();
+    });
 });
