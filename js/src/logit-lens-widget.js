@@ -62,8 +62,8 @@ var LogitLensWidget = (function() {
                 z-index: 100; min-width: 180px; max-width: 280px;
             }
             #${uid} .popup.visible { display: block; }
-            #${uid} .popup-header { font-weight: 600; font-size: calc(var(--ll-title-size, 16px) * 0.8); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
-            #${uid} .popup-header code { font-weight: 400; font-size: calc(var(--ll-content-size, 10px) * 1.2); background: #f5f5f5; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
+            #${uid} .popup-header { font-weight: 600; font-size: min(var(--ll-title-size, 16px), calc((var(--ll-content-size, 10px) + var(--ll-title-size, 16px)) / 2)); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
+            #${uid} .popup-header code { font-weight: 400; font-size: min(var(--ll-title-size, 16px), calc((var(--ll-content-size, 10px) + var(--ll-title-size, 16px)) / 2)); background: #f5f5f5; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
             #${uid} .popup-close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #999; font-size: var(--ll-title-size, 16px); }
             #${uid} .popup-close:hover { color: #333; }
             #${uid} .topk-item {
@@ -1838,8 +1838,15 @@ var LogitLensWidget = (function() {
                 if (hoverTrajectory && hoverLabel) {
                     legendEntryCount += 1;  // hover entry
                 }
-                var legendTotalHeight = legendEntryCount * 14;
-                var legendY = chartMargin.top + Math.max(10, (chartInnerHeight - legendTotalHeight) / 2);
+                // Scale legend dimensions with font size (base values at 10px font)
+                var legendEntryHeight = 14 * fontScale;
+                var legendLineLength = 20 * fontScale;       // Length of line sample
+                var legendTextX = 25 * fontScale;            // X position of text after line
+                var legendTextY = 4 * fontScale;             // Baseline offset for text
+                var legendCloseX = -12 * fontScale;          // Close button X position
+                var legendIndent = 18 * fontScale;           // Indentation for legend items
+                var legendTotalHeight = legendEntryCount * legendEntryHeight;
+                var legendY = chartMargin.top + Math.max(10 * fontScale, (chartInnerHeight - legendTotalHeight) / 2);
 
                 // Draw trajectories for each position with appropriate line style
                 positionsToShow.forEach(function(showPos) {
@@ -1872,14 +1879,14 @@ var LogitLensWidget = (function() {
                     titleItem.appendChild(titleClipPath);
 
                     var titleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    titleText.setAttribute("x", "0"); titleText.setAttribute("y", "4");
+                    titleText.setAttribute("x", "0"); titleText.setAttribute("y", legendTextY);
                     titleText.style.fontSize = "var(--ll-content-size, 10px)"; titleText.setAttribute("fill", group.color);
                     titleText.setAttribute("font-weight", "600");
                     titleText.setAttribute("clip-path", "url(#" + titleClipId + ")");
                     titleText.textContent = groupLabel;
                     titleItem.appendChild(titleText);
                     legendG.appendChild(titleItem);
-                    legendY += 14;
+                    legendY += legendEntryHeight;
 
                     // Entry per pinned row
                     pinnedRows.forEach(function(pr, prIdx) {
@@ -1887,7 +1894,7 @@ var LogitLensWidget = (function() {
                         var lineStyle = pr.lineStyle;
 
                         var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                        legendItem.setAttribute("transform", "translate(18, " + legendY + ")");
+                        legendItem.setAttribute("transform", "translate(" + legendIndent + ", " + legendY + ")");
                         legendItem.style.cursor = "pointer";
 
                         var hitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1898,7 +1905,7 @@ var LogitLensWidget = (function() {
 
                         var closeBtn = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         closeBtn.setAttribute("class", "legend-close");
-                        closeBtn.setAttribute("x", "-12"); closeBtn.setAttribute("y", "4");
+                        closeBtn.setAttribute("x", legendCloseX); closeBtn.setAttribute("y", "4");
                         closeBtn.style.fontSize = "var(--ll-title-size, 16px)"; closeBtn.setAttribute("fill", "#999");
                         closeBtn.style.display = "none";
                         closeBtn.textContent = "\u00d7";
@@ -1918,13 +1925,13 @@ var LogitLensWidget = (function() {
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                         clipPath.setAttribute("id", clipId);
                         var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                        clipRect.setAttribute("x", "25"); clipRect.setAttribute("y", "-10");
-                        clipRect.setAttribute("width", inputTokenWidth - 50); clipRect.setAttribute("height", "20");
+                        clipRect.setAttribute("x", legendTextX); clipRect.setAttribute("y", -10 * fontScale);
+                        clipRect.setAttribute("width", inputTokenWidth - 50 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                         clipPath.appendChild(clipRect);
                         legendItem.appendChild(clipPath);
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        text.setAttribute("x", "25"); text.setAttribute("y", "4");
+                        text.setAttribute("x", legendTextX); text.setAttribute("y", legendTextY);
                         text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = visualizeSpaces(rowToken);
@@ -1940,7 +1947,7 @@ var LogitLensWidget = (function() {
                         });
 
                         legendG.appendChild(legendItem);
-                        legendY += 14;
+                        legendY += legendEntryHeight;
                     });
                 } else {
                     // Standard legend: one entry per pinned group
@@ -1948,7 +1955,7 @@ var LogitLensWidget = (function() {
                         var groupLabel = getGroupLabel(group);
 
                         var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                        legendItem.setAttribute("transform", "translate(18, " + legendY + ")");
+                        legendItem.setAttribute("transform", "translate(" + legendIndent + ", " + legendY + ")");
                         legendItem.style.cursor = "pointer";
 
                         var hitTarget = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1959,7 +1966,7 @@ var LogitLensWidget = (function() {
 
                         var closeBtn = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         closeBtn.setAttribute("class", "legend-close");
-                        closeBtn.setAttribute("x", "-12"); closeBtn.setAttribute("y", "4");
+                        closeBtn.setAttribute("x", legendCloseX); closeBtn.setAttribute("y", "4");
                         closeBtn.style.fontSize = "var(--ll-title-size, 16px)"; closeBtn.setAttribute("fill", "#999");
                         closeBtn.style.display = "none";
                         closeBtn.textContent = "\u00d7";
@@ -1975,13 +1982,13 @@ var LogitLensWidget = (function() {
                         var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                         clipPath.setAttribute("id", clipId);
                         var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                        clipRect.setAttribute("x", "20"); clipRect.setAttribute("y", "-10");
-                        clipRect.setAttribute("width", inputTokenWidth - 45); clipRect.setAttribute("height", "20");
+                        clipRect.setAttribute("x", 20 * fontScale); clipRect.setAttribute("y", -10 * fontScale);
+                        clipRect.setAttribute("width", inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                         clipPath.appendChild(clipRect);
                         legendItem.appendChild(clipPath);
 
                         var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        text.setAttribute("x", "20"); text.setAttribute("y", "4");
+                        text.setAttribute("x", 20 * fontScale); text.setAttribute("y", legendTextY);
                         text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#ddd" : "#333");
                         text.setAttribute("clip-path", "url(#" + clipId + ")");
                         text.textContent = groupLabel;
@@ -1999,7 +2006,7 @@ var LogitLensWidget = (function() {
                         });
 
                         legendG.appendChild(legendItem);
-                        legendY += 14;
+                        legendY += legendEntryHeight;
                     });
                 }
 
@@ -2009,7 +2016,7 @@ var LogitLensWidget = (function() {
 
                     var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
                     legendItem.setAttribute("class", "legend-item hover-legend");
-                    legendItem.setAttribute("transform", "translate(18, " + legendY + ")");
+                    legendItem.setAttribute("transform", "translate(" + legendIndent + ", " + legendY + ")");
 
                     var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                     line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
@@ -2024,13 +2031,13 @@ var LogitLensWidget = (function() {
                     var clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                     clipPath.setAttribute("id", clipId);
                     var clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                    clipRect.setAttribute("x", "20"); clipRect.setAttribute("y", "-10");
-                    clipRect.setAttribute("width", inputTokenWidth - 45); clipRect.setAttribute("height", "20");
+                    clipRect.setAttribute("x", 20 * fontScale); clipRect.setAttribute("y", -10 * fontScale);
+                    clipRect.setAttribute("width", inputTokenWidth - 45 * fontScale); clipRect.setAttribute("height", 20 * fontScale);
                     clipPath.appendChild(clipRect);
                     legendItem.appendChild(clipPath);
 
                     var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    text.setAttribute("x", "20"); text.setAttribute("y", "4");
+                    text.setAttribute("x", 20 * fontScale); text.setAttribute("y", legendTextY);
                     text.style.fontSize = "var(--ll-content-size, 10px)"; text.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
                     text.setAttribute("clip-path", "url(#" + clipId + ")");
                     text.textContent = visualizeSpaces(hoverLabel);
