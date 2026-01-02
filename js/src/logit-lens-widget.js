@@ -660,12 +660,17 @@ var LogitLensWidget = (function() {
 
                     html += '<td class="input-token' + (isPinnedRow ? ' pinned-row' : '') + '" data-pos="' + pos + '" title="' + escapeHtml(tok) + '" style="' + inputStyle + '">';
 
-                    // Mini SVG line style indicator for pinned rows (wider to show dash-dot pattern)
+                    // Mini SVG line style indicator for pinned rows (scaled with font size)
                     if (isPinnedRow) {
-                        html += '<svg width="20" height="10" style="vertical-align: middle; margin-right: 2px;">';
-                        html += '<line x1="0" y1="5" x2="20" y2="5" stroke="' + (isDarkMode() ? '#ccc' : '#333') + '" stroke-width="1.5"';
+                        var miniScale = getContentFontSizePx() / 10;
+                        var miniWidth = 20 * miniScale;
+                        var miniHeight = 10 * miniScale;
+                        var miniStroke = 1.5 * miniScale;
+                        html += '<svg width="' + miniWidth + '" height="' + miniHeight + '" style="vertical-align: middle; margin-right: 2px;">';
+                        html += '<line x1="0" y1="' + (miniHeight/2) + '" x2="' + miniWidth + '" y2="' + (miniHeight/2) + '" stroke="' + (isDarkMode() ? '#ccc' : '#333') + '" stroke-width="' + miniStroke + '"';
                         if (rowLineStyle.dash) {
-                            html += ' stroke-dasharray="' + rowLineStyle.dash + '"';
+                            var scaledDash = rowLineStyle.dash.split(",").map(function(v) { return parseFloat(v) * miniScale; }).join(",");
+                            html += ' stroke-dasharray="' + scaledDash + '"';
                         }
                         html += '/></svg>';
                     }
@@ -1547,7 +1552,11 @@ var LogitLensWidget = (function() {
                     e.stopPropagation();
                 });
 
-                var dotRadius = 3;
+                // Scale dot radius and stroke width proportionally with font size
+                var fontScale = getContentFontSizePx() / 10;
+                var dotRadius = 3 * fontScale;
+                var strokeWidth = 2 * fontScale;
+                var strokeWidthHover = 1.5 * fontScale;
                 var labelMargin = chartMargin.right;
                 var usableWidth = chartInnerWidth - labelMargin;
 
@@ -1897,10 +1906,11 @@ var LogitLensWidget = (function() {
 
                         var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                         line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
-                        line.setAttribute("x2", "20"); line.setAttribute("y2", "0");
-                        line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", "2");
+                        line.setAttribute("x2", 20 * fontScale); line.setAttribute("y2", "0");
+                        line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", strokeWidth);
                         if (lineStyle.dash) {
-                            line.setAttribute("stroke-dasharray", lineStyle.dash);
+                            var scaledDash = lineStyle.dash.split(",").map(function(v) { return parseFloat(v) * fontScale; }).join(",");
+                            line.setAttribute("stroke-dasharray", scaledDash);
                         }
                         legendItem.appendChild(line);
 
@@ -1957,8 +1967,8 @@ var LogitLensWidget = (function() {
 
                         var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                         line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
-                        line.setAttribute("x2", "15"); line.setAttribute("y2", "0");
-                        line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", "2");
+                        line.setAttribute("x2", 15 * fontScale); line.setAttribute("y2", "0");
+                        line.setAttribute("stroke", group.color); line.setAttribute("stroke-width", strokeWidth);
                         legendItem.appendChild(line);
 
                         var clipId = uid + "_legend_clip_" + groupIdx;
@@ -2003,10 +2013,10 @@ var LogitLensWidget = (function() {
 
                     var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                     line.setAttribute("x1", "0"); line.setAttribute("y1", "0");
-                    line.setAttribute("x2", "15"); line.setAttribute("y2", "0");
+                    line.setAttribute("x2", 15 * fontScale); line.setAttribute("y2", "0");
                     line.setAttribute("stroke", hoverColor || "#999");
-                    line.setAttribute("stroke-width", "1.5");
-                    line.setAttribute("stroke-dasharray", "4,2");
+                    line.setAttribute("stroke-width", strokeWidthHover);
+                    line.setAttribute("stroke-dasharray", (4 * fontScale) + "," + (2 * fontScale));
                     line.style.opacity = "0.7";
                     legendItem.appendChild(line);
 
@@ -2035,7 +2045,10 @@ var LogitLensWidget = (function() {
 
                 var chartMargin = getChartMargin();
                 var chartInnerHeight = getChartInnerHeight();
-                var dotRadius = isHover ? 2 : 3;
+                // Scale dot radius and stroke width proportionally with font size
+                var fontScale = getContentFontSizePx() / 10;
+                var dotRadius = (isHover ? 2 : 3) * fontScale;
+                var strokeWidth = (isHover ? 1.5 : 2) * fontScale;
                 var labelMargin = chartMargin.right;
                 var usableWidth = chartInnerWidth - labelMargin;
                 function layerToX(layerIdx) {
@@ -2058,12 +2071,14 @@ var LogitLensWidget = (function() {
                 pathEl.setAttribute("d", d);
                 pathEl.setAttribute("fill", "none");
                 pathEl.setAttribute("stroke", color);
-                pathEl.setAttribute("stroke-width", isHover ? "1.5" : "2");
-                // Use provided dash pattern, or default hover pattern
+                pathEl.setAttribute("stroke-width", strokeWidth);
+                // Use provided dash pattern (scaled), or default hover pattern
                 if (isHover) {
-                    pathEl.setAttribute("stroke-dasharray", "4,2");
+                    pathEl.setAttribute("stroke-dasharray", (4 * fontScale) + "," + (2 * fontScale));
                 } else if (dashPattern) {
-                    pathEl.setAttribute("stroke-dasharray", dashPattern);
+                    // Scale the provided dash pattern
+                    var scaledDash = dashPattern.split(",").map(function(v) { return parseFloat(v) * fontScale; }).join(",");
+                    pathEl.setAttribute("stroke-dasharray", scaledDash);
                 }
                 g.appendChild(pathEl);
 
@@ -2075,7 +2090,7 @@ var LogitLensWidget = (function() {
                     var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                     circle.setAttribute("cx", x.toFixed(1));
                     circle.setAttribute("cy", y.toFixed(1));
-                    circle.setAttribute("r", isHover ? 2 : 3);
+                    circle.setAttribute("r", dotRadius);
                     circle.setAttribute("fill", color);
                     if (isHover) circle.style.opacity = "0.7";
 
