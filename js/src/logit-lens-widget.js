@@ -2296,31 +2296,49 @@ var LogitLensWidget = (function() {
             // Apply dark mode based on override or auto-detection
             applyDarkMode(isDarkMode());
 
-            // Watch for color-scheme changes on ancestors (for auto-detection mode)
+            // Watch for color-scheme and font size changes on ancestors
             var lastDetectedDarkMode = isDarkMode();
-            var colorSchemeObserver = new MutationObserver(function() {
+            var lastTitleSize = getComputedStyle(container).getPropertyValue('--ll-title-size');
+            var lastContentSize = getComputedStyle(container).getPropertyValue('--ll-content-size');
+            var styleObserver = new MutationObserver(function() {
                 // Stop if widget was removed from DOM
                 if (!document.getElementById(uid)) {
-                    colorSchemeObserver.disconnect();
+                    styleObserver.disconnect();
                     return;
                 }
-                // Only react if in auto-detect mode (no override)
-                if (darkModeOverride !== null) return;
-                var currentDarkMode = isDarkMode();
-                if (currentDarkMode !== lastDetectedDarkMode) {
-                    lastDetectedDarkMode = currentDarkMode;
-                    applyDarkMode(currentDarkMode);
+                var needsRebuild = false;
+
+                // Check dark mode (only if in auto-detect mode)
+                if (darkModeOverride === null) {
+                    var currentDarkMode = isDarkMode();
+                    if (currentDarkMode !== lastDetectedDarkMode) {
+                        lastDetectedDarkMode = currentDarkMode;
+                        applyDarkMode(currentDarkMode);
+                        needsRebuild = true;
+                    }
+                }
+
+                // Check font sizes
+                var currentTitleSize = getComputedStyle(container).getPropertyValue('--ll-title-size');
+                var currentContentSize = getComputedStyle(container).getPropertyValue('--ll-content-size');
+                if (currentTitleSize !== lastTitleSize || currentContentSize !== lastContentSize) {
+                    lastTitleSize = currentTitleSize;
+                    lastContentSize = currentContentSize;
+                    needsRebuild = true;
+                }
+
+                if (needsRebuild) {
                     buildTable(currentCellWidth, currentVisibleIndices, currentMaxRows, currentStride);
                 }
             });
-            // Observe document root for style/class changes that might affect color-scheme
-            colorSchemeObserver.observe(document.documentElement, {
+            // Observe document root for style/class changes
+            styleObserver.observe(document.documentElement, {
                 attributes: true,
                 attributeFilter: ['style', 'class']
             });
             // Also observe body if it exists
             if (document.body) {
-                colorSchemeObserver.observe(document.body, {
+                styleObserver.observe(document.body, {
                     attributes: true,
                     attributeFilter: ['style', 'class']
                 });

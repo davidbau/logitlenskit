@@ -51,7 +51,18 @@
         <button id="load-gptj-btn" style="padding: 6px 12px; font-size: 13px; cursor: pointer; margin-left: 5px;">
             GPT-J 6B (28 layers)
         </button>
-        <span id="current-model" style="margin-left: 10px; font-size: 12px; color: #666;">Currently: Llama 3.1 70B</span>
+        <span id="current-model" style="margin-left: 10px; font-size: 12px;">Currently: Llama 3.1 70B</span>
+    </p>
+    <p style="margin-bottom: 15px;">
+        <label>
+            <input type="checkbox" id="dark-mode-checkbox"> Dark mode
+        </label>
+        <span style="margin-left: 20px;">
+            Title size: <input type="text" id="title-size-input" value="16px" style="width: 50px; font-size: 12px;">
+        </span>
+        <span style="margin-left: 10px;">
+            Content size: <input type="text" id="content-size-input" value="10px" style="width: 50px; font-size: 12px;">
+        </span>
     </p>
     <div class="preview-container" id="viz"></div>
     <p style="margin-top: 20px;">
@@ -61,10 +72,7 @@
         <label id="link-label" style="margin-left: 15px; display: none;">
             <input type="checkbox" id="link-checkbox"> Link columns
         </label>
-        <label style="margin-left: 15px;">
-            <input type="checkbox" id="dark-mode-checkbox"> Dark mode
-        </label>
-        <span id="state-display" style="margin-left: 10px; font-size: 11px; color: #666;"></span>
+        <span id="state-display" style="margin-left: 10px; font-size: 11px; color: light-dark(#666, #aaa);"></span>
     </p>
     <div class="preview-container" id="viz2" style="margin-top: 20px;"></div>
 
@@ -162,6 +170,14 @@ document.getElementById("link-checkbox").addEventListener("change", function() {
 // Dark mode checkbox handler - just toggle color-scheme, widgets auto-detect
 document.getElementById("dark-mode-checkbox").addEventListener("change", function() {
     document.documentElement.style.colorScheme = this.checked ? "dark" : "light";
+});
+
+// Font size input handlers - set CSS custom properties on document root
+document.getElementById("title-size-input").addEventListener("input", function() {
+    document.documentElement.style.setProperty("--ll-title-size", this.value);
+});
+document.getElementById("content-size-input").addEventListener("input", function() {
+    document.documentElement.style.setProperty("--ll-content-size", this.value);
 });
 </script>
 </body>
