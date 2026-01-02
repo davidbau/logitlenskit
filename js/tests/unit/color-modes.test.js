@@ -23,11 +23,18 @@ describe('Color Modes Multi-Select', function() {
         document.body.innerHTML = '';
     });
 
-    test('default colorModes should be ["top"]', function() {
+    test('default colorModes should be ["top", nextToken]', function() {
         var widget = LogitLensWidget('#container', testData);
         var state = widget.getState();
 
-        expect(state.colorModes).toEqual(['top']);
+        // Default includes both "top" and the final prediction token
+        expect(state.colorModes.length).toBe(2);
+        expect(state.colorModes[0]).toBe('top');
+        // Second mode is the top prediction at last position/layer
+        var lastPos = testData.tokens.length - 1;
+        var lastLayer = testData.layers.length - 1;
+        var expectedNextToken = testData.cells[lastPos][lastLayer].token;
+        expect(state.colorModes[1]).toBe(expectedNextToken);
     });
 
     test('colorModes should be an array in getState', function() {
@@ -156,7 +163,8 @@ describe('Color Mode Menu', function() {
     });
 
     test('shift+click should toggle mode', function() {
-        var widget = LogitLensWidget('#container', testData);
+        // Start with just "top" to test adding a mode
+        var widget = LogitLensWidget('#container', testData, { colorModes: ['top'] });
 
         // Open menu
         var btn = document.querySelector('#container .color-mode-btn');
@@ -180,7 +188,8 @@ describe('Color Mode Menu', function() {
     });
 
     test('shift+click should not rebuild menu, just toggle checkmark and update title', function() {
-        var widget = LogitLensWidget('#container', testData);
+        // Start with just "top" to test adding a mode
+        var widget = LogitLensWidget('#container', testData, { colorModes: ['top'] });
 
         // Open menu
         var btn = document.querySelector('#container .color-mode-btn');
@@ -226,7 +235,8 @@ describe('Color Mode Menu', function() {
     });
 
     test('ctrl+click should toggle mode', function() {
-        var widget = LogitLensWidget('#container', testData);
+        // Start with just "top" to test adding a mode
+        var widget = LogitLensWidget('#container', testData, { colorModes: ['top'] });
 
         // Open menu
         var btn = document.querySelector('#container .color-mode-btn');
@@ -249,7 +259,8 @@ describe('Color Mode Menu', function() {
     });
 
     test('meta+click should toggle mode', function() {
-        var widget = LogitLensWidget('#container', testData);
+        // Start with just "top" to test adding a mode
+        var widget = LogitLensWidget('#container', testData, { colorModes: ['top'] });
 
         // Open menu
         var btn = document.querySelector('#container .color-mode-btn');

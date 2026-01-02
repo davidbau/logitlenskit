@@ -204,9 +204,11 @@ var LogitLensWidget = (function() {
             var currentHoverPos = widgetData.tokens.length - 1;
             // colorModes is an array of active color modes; empty array means "none"
             // Backward compat: old state may have colorMode as string
+            // Default: show both "top" and the specific next token for visual interest
+            var defaultNextToken = widgetData.cells[widgetData.tokens.length - 1][nLayers - 1].token;
             var colorModes = (uiState && uiState.colorModes) ? uiState.colorModes.slice() :
                              (uiState && uiState.colorMode && uiState.colorMode !== "none") ? [uiState.colorMode] :
-                             (uiState && uiState.colorMode === "none") ? [] : ["top"];
+                             (uiState && uiState.colorMode === "none") ? [] : ["top", defaultNextToken];
             var customTitle = (uiState && uiState.title) || "Logit Lens: Top Predictions by Layer";
 
             var colors = ["#2196F3", "#e91e63", "#4CAF50", "#FF9800", "#9C27B0", "#00BCD4", "#F44336", "#8BC34A"];
