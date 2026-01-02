@@ -168,6 +168,36 @@
       padding: 10px 15px;
       font-size: 0.8em;
     }
+    #search-box {
+      padding: 6px 10px;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 180px;
+      outline: none;
+      background: #16213e;
+      color: #eee;
+    }
+    #search-box:focus {
+      border-color: #e94560;
+      box-shadow: 0 0 0 2px rgba(233,69,96,0.3);
+    }
+    #search-box::placeholder {
+      color: #666;
+    }
+    .search-highlight {
+      fill: none;
+      stroke: #e94560;
+      stroke-width: 3px;
+      pointer-events: none;
+    }
+    @keyframes highlight-pulse {
+      0%, 100% { stroke-opacity: 1; }
+      50% { stroke-opacity: 0.4; }
+    }
+    .search-highlight.active {
+      animation: highlight-pulse 1s ease-in-out infinite;
+    }
     #legend h3 {
       margin-bottom: 8px;
       color: #e94560;
@@ -211,6 +241,7 @@
         </div>
         <button id="play-btn">Play</button>
       </div>
+      <input type="text" id="search-box" placeholder="Search (/ to focus)">
       <div id="commit-info">
         <span class="hash"></span>
         <span class="message"></span>
@@ -442,6 +473,11 @@
 
           // Save positions
           nodes.forEach(n => nodePositions.set(n.id, { x: n.x, y: n.y }));
+
+          // Update search highlight position
+          if (typeof updateHighlightPosition === 'function') {
+            updateHighlightPosition();
+          }
         });
     }
 
@@ -518,6 +554,131 @@
       const newWidth = container.clientWidth;
       const newHeight = container.clientHeight;
       svg.attr('viewBox', [0, 0, newWidth, newHeight]);
+    });
+
+    // Search functionality
+    const searchBox = document.getElementById('search-box');
+    let highlightCircle = null;
+    let highlightRect = null;
+    let currentHighlightNode = null;
+
+    function highlightNode(searchTerm) {
+      // Remove existing highlights
+      if (highlightCircle) {
+        highlightCircle.remove();
+        highlightCircle = null;
+      }
+      if (highlightRect) {
+        highlightRect.remove();
+        highlightRect = null;
+      }
+      currentHighlightNode = null;
+
+      if (!searchTerm || !searchTerm.trim()) return;
+
+      const term = searchTerm.trim().toLowerCase();
+      const snapshot = timeline[currentIndex];
+      if (!snapshot) return;
+
+      // Find best matching node (prioritize: exact > prefix > substring, then shorter names)
+      let matchingNode = null;
+      let bestScore = -1;
+      let bestLength = Infinity;
+
+      for (const n of snapshot.nodes) {
+        const id = n.id.toLowerCase();
+        let score = -1;
+
+        if (id === term) {
+          score = 3; // Exact match
+        } else if (id.startsWith(term)) {
+          score = 2; // Prefix match
+        } else if (id.includes(term)) {
+          score = 1; // Substring match
+        }
+
+        // Pick this node if better score, or same score but shorter name
+        if (score > bestScore || (score === bestScore && score > 0 && n.id.length < bestLength)) {
+          bestScore = score;
+          bestLength = n.id.length;
+          matchingNode = n;
+        }
+      }
+
+      if (matchingNode && nodePositions.has(matchingNode.id)) {
+        const pos = nodePositions.get(matchingNode.id);
+        currentHighlightNode = matchingNode;
+
+        // Create highlight shape based on node type
+        if (matchingNode.type === 'function') {
+          highlightCircle = g.insert('circle', ':first-child')
+            .attr('class', 'search-highlight active')
+            .attr('cx', pos.x)
+            .attr('cy', pos.y)
+            .attr('r', 25);
+        } else {
+          highlightRect = g.insert('rect', ':first-child')
+            .attr('class', 'search-highlight active')
+            .attr('x', pos.x - 30)
+            .attr('y', pos.y - 15)
+            .attr('width', 60)
+            .attr('height', 30)
+            .attr('rx', 5);
+        }
+
+        // Pan to the node
+        const scale = 1.5;
+        const transform = d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(scale)
+          .translate(-pos.x, -pos.y);
+
+        svg.transition()
+          .duration(500)
+          .call(zoom.transform, transform);
+      }
+    }
+
+    // Update highlight position when simulation ticks
+    const originalTick = simulation ? simulation.on('tick') : null;
+    function updateHighlightPosition() {
+      if (currentHighlightNode && nodePositions.has(currentHighlightNode.id)) {
+        const pos = nodePositions.get(currentHighlightNode.id);
+        if (highlightCircle) {
+          highlightCircle.attr('cx', pos.x).attr('cy', pos.y);
+        }
+        if (highlightRect) {
+          highlightRect.attr('x', pos.x - 30).attr('y', pos.y - 15);
+        }
+      }
+    }
+
+    searchBox.addEventListener('input', (e) => {
+      highlightNode(e.target.value);
+    });
+
+    searchBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchBox.value = '';
+        highlightNode('');
+        searchBox.blur();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        // Cmd/Ctrl+Enter opens GitHub link for the highlighted node
+        if (currentHighlightNode) {
+          const snapshot = timeline[currentIndex];
+          const url = `https://github.com/davidbau/logitlenskit/blob/${snapshot.hash}/js/src/logit-lens-widget.js#L${currentHighlightNode.line}`;
+          window.open(url, '_blank');
+        }
+      }
+    });
+
+    // Keyboard shortcut: / to focus search
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchBox) {
+        e.preventDefault();
+        searchBox.focus();
+        searchBox.select();
+      }
     });
   </script>
 </body>
