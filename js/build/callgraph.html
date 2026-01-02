@@ -745,6 +745,13 @@
 
         nodeMerge.attr('transform', d => `translate(${d.x},${d.y})`);
 
+        // Save node positions for search and persistence
+        simulation.nodes().forEach(n => {
+          if (n.x !== undefined && n.y !== undefined) {
+            nodePositions.set(n.id, { x: n.x, y: n.y });
+          }
+        });
+
         // Update search highlight position if active
         if (typeof updateHighlightPosition === 'function') {
           updateHighlightPosition();
@@ -928,10 +935,30 @@
       const snapshot = timeline[currentIndex];
       if (!snapshot) return;
 
-      // Find matching node (case-insensitive partial match)
-      const matchingNode = snapshot.nodes.find(n =>
-        n.id.toLowerCase().includes(term)
-      );
+      // Find best matching node (prioritize: exact > prefix > substring, then shorter names)
+      let matchingNode = null;
+      let bestScore = -1;
+      let bestLength = Infinity;
+
+      for (const n of snapshot.nodes) {
+        const id = n.id.toLowerCase();
+        let score = -1;
+
+        if (id === term) {
+          score = 3; // Exact match
+        } else if (id.startsWith(term)) {
+          score = 2; // Prefix match
+        } else if (id.includes(term)) {
+          score = 1; // Substring match
+        }
+
+        // Pick this node if better score, or same score but shorter name
+        if (score > bestScore || (score === bestScore && score > 0 && n.id.length < bestLength)) {
+          bestScore = score;
+          bestLength = n.id.length;
+          matchingNode = n;
+        }
+      }
 
       if (matchingNode && nodePositions.has(matchingNode.id)) {
         const pos = nodePositions.get(matchingNode.id);
@@ -978,6 +1005,16 @@
         searchBox.value = '';
         highlightNode('');
         searchBox.blur();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        // Cmd/Ctrl+Enter opens GitHub link for the highlighted node
+        if (currentHighlightNode) {
+          const snapshot = timeline[currentIndex];
+          const node = snapshot?.nodes.find(n => n.id === currentHighlightNode);
+          if (node && node.line) {
+            const url = `https://github.com/${REPO_NAME}/blob/${snapshot.hash}/${SOURCE_FILE}#L${node.line}`;
+            window.open(url, '_blank');
+          }
+        }
       }
     });
 
