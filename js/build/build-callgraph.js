@@ -157,11 +157,14 @@ function extractCallGraph(js) {
     let name = null;
     let type = 'function';
 
-    // Only collect global functions (depth <= 4 to account for Program -> VariableDeclaration -> VariableDeclarator)
-    const isGlobalFunction = depth <= 4;
+    // Track all named functions, not just global ones
+    // Use depth to distinguish: depth <= 2 is "global", deeper is "nested"
+    // (depth 0 = after IIFE reset, 1 = class body, 2 = method body, 3+ = nested)
+    const isGlobalFunction = depth <= 2;
 
-    if (node.type === 'FunctionDeclaration' && node.id && isGlobalFunction) {
+    if (node.type === 'FunctionDeclaration' && node.id) {
       name = node.id.name;
+      if (!isGlobalFunction) type = 'nested';
     } else if (node.type === 'MethodDefinition' && node.key && currentClass) {
       const methodName = node.key.name || node.key.value;
       name = `${currentClass}.${methodName}`;
@@ -174,9 +177,9 @@ function extractCallGraph(js) {
       classes.get(currentClass)?.methods.add(methodName);
     } else if (node.type === 'VariableDeclarator' &&
                node.id?.name &&
-               (node.init?.type?.includes('Function') || node.init?.type === 'ArrowFunctionExpression') &&
-               isGlobalFunction) {
+               (node.init?.type?.includes('Function') || node.init?.type === 'ArrowFunctionExpression')) {
       name = node.id.name;
+      if (!isGlobalFunction) type = 'nested';
 
       // Check if this is a mixin pattern: (Base) => class extends Base { ... }
       const arrowBody = node.init?.body;
@@ -219,9 +222,9 @@ function extractCallGraph(js) {
         name = null; // Don't add as a regular function, we added it as a class
       }
     } else if (node.type === 'AssignmentExpression' &&
-               (node.right?.type === 'FunctionExpression' || node.right?.type === 'ArrowFunctionExpression') &&
-               isGlobalFunction) {
+               (node.right?.type === 'FunctionExpression' || node.right?.type === 'ArrowFunctionExpression')) {
       // Handle document.onmousemove = function... or helper_fn = function...
+      if (!isGlobalFunction) type = 'nested';
       const left = node.left;
       if (left.type === 'Identifier') {
           name = left.name;
@@ -597,6 +600,60 @@ function extractCallGraph(js) {
             functions.get(funcName).calls.add(target);
         }
       }
+
+      // 1b. Handle callback patterns - track function arguments passed to common methods
+      // These create implicit "calls" edges to the callback functions
+      if (funcName && functions.has(funcName) && node.callee && node.arguments?.length > 0) {
+        let callbackArgIndex = -1;
+        let methodName = null;
+
+        // Get method name for member expressions like arr.map(), el.addEventListener()
+        if (node.callee.type === 'MemberExpression' && node.callee.property) {
+          methodName = node.callee.property.name || node.callee.property.value;
+        } else if (node.callee.type === 'Identifier') {
+          methodName = node.callee.name;
+        }
+
+        // Determine which argument is the callback based on method name
+        if (methodName) {
+          // Array methods: callback is first argument
+          if (['map', 'forEach', 'filter', 'find', 'findIndex', 'some', 'every', 'reduce', 'reduceRight', 'sort', 'flatMap'].includes(methodName)) {
+            callbackArgIndex = 0;
+          }
+          // Event listeners: callback is second argument
+          else if (methodName === 'addEventListener' || methodName === 'removeEventListener') {
+            callbackArgIndex = 1;
+          }
+          // Timers: callback is first argument
+          else if (['setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback'].includes(methodName)) {
+            callbackArgIndex = 0;
+          }
+          // Promise methods: callback is first argument
+          else if (['then', 'catch', 'finally'].includes(methodName)) {
+            callbackArgIndex = 0;
+          }
+        }
+
+        // If we identified a callback argument, track it as a call
+        if (callbackArgIndex >= 0 && callbackArgIndex < node.arguments.length) {
+          const callbackArg = node.arguments[callbackArgIndex];
+          // Only track if it's a named function reference (not anonymous)
+          if (callbackArg.type === 'Identifier') {
+            const callbackName = callbackArg.name;
+            // Check if it's a known function (not a local variable)
+            if (functions.has(callbackName) && !currentScope[callbackName]) {
+              functions.get(funcName).calls.add(callbackName);
+            }
+          }
+          // Handle this.methodName or obj.methodName passed as callback
+          else if (callbackArg.type === 'MemberExpression' && callbackArg.property) {
+            const cbTargets = resolveTargets(callbackArg, className, currentScope, funcName);
+            for (const target of cbTargets) {
+              functions.get(funcName).calls.add(target);
+            }
+          }
+        }
+      }
     }
 
     // 2. Handle NewExpression (Constructor Calls)
@@ -720,6 +777,47 @@ function extractCallGraph(js) {
           }
         }
       }
+    }
+  }
+
+  // Dead code detection: count incoming edges for each node
+  const incomingEdges = new Map();
+  for (const edge of edges) {
+    incomingEdges.set(edge.target, (incomingEdges.get(edge.target) || 0) + 1);
+  }
+
+  // Mark nodes with no incoming edges as potentially dead code
+  // Exceptions: entry points, nested functions (hard to track callers), etc.
+  // Also include functions likely called from inline/module-level code
+  const entryPointPatterns = [
+    /^LogitLensWidget$/,           // Main entry point
+    /^window\./,                   // Window-attached functions
+    /^document\./,                 // Document-attached handlers
+    /\.constructor$/,              // Constructors
+    /\.on[A-Z]/,                   // Event handlers like onClick
+    /^getState$/,                  // Common API exports
+    /^setState$/,
+    /^setColumnState$/,
+    /^getColumnState$/,
+    /^normalize/,                  // Normalization utilities
+    /^apply[A-Z]/,                 // Applicator functions
+    /^init[A-Z]?/,                 // Initialization functions
+    /^setup[A-Z]?/,                // Setup functions
+    /^get[A-Z].*Width$/,           // Layout getters
+    /^get[A-Z].*Height$/,
+    /^get[A-Z].*Size/,
+  ];
+
+  for (const node of nodes) {
+    const hasIncoming = incomingEdges.has(node.id) && incomingEdges.get(node.id) > 0;
+    const isEntryPoint = entryPointPatterns.some(pattern => pattern.test(node.id));
+    const isClass = node.type === 'class' || node.type === 'mixin';
+    // Don't mark nested functions as dead - their callers are often inline code we can't track
+    const isNested = node.type === 'nested';
+
+    // Mark as dead code if no incoming edges and not an entry point or nested
+    if (!hasIncoming && !isEntryPoint && !isClass && !isNested) {
+      node.deadCode = true;
     }
   }
 

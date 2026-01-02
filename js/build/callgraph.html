@@ -64,6 +64,19 @@
     .node.method circle {
       stroke-dasharray: 2,2;
     }
+    .node.nested circle {
+      stroke-width: 1px;
+      r: 4;
+    }
+    .node.dead-code circle {
+      stroke: #c00;
+      stroke-width: 2px;
+      opacity: 0.6;
+    }
+    .node.dead-code text {
+      fill: #c00;
+      font-style: italic;
+    }
     .node text {
       font-size: 9px;
       fill: #333;
@@ -633,7 +646,7 @@
 
       const nodeEnter = node.enter()
         .append('g')
-        .attr('class', d => 'node ' + (d.type || 'function') + (d.isNew ? ' new' : ''))
+        .attr('class', d => 'node ' + (d.type || 'function') + (d.isNew ? ' new' : '') + (d.deadCode ? ' dead-code' : ''))
         .call(d3.drag()
           .on('start', dragstarted)
           .on('drag', dragged)
@@ -712,7 +725,9 @@
             .style('opacity', 1)
             .style('left', (event.pageX + 10) + 'px')
             .style('top', (event.pageY - 10) + 'px')
-            .html(`<strong>${d.id}</strong><br>Type: ${d.type || 'function'}<br>Added: ${timeline[d.firstSeen]?.date || 'unknown'}` +
+            .html(`<strong>${d.id}</strong><br>Type: ${d.type || 'function'}` +
+                  (d.deadCode ? '<br><span style="color:#c00">Potentially unused</span>' : '') +
+                  `<br>Added: ${timeline[d.firstSeen]?.date || 'unknown'}` +
                   (d.line ? `<br>Lines: ${d.line}-${d.endLine}` : '') +
                   `<br><em>${modifierHint} to view on GitHub</em>`);
         })
