@@ -231,12 +231,41 @@
       transition: opacity 0.2s;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
+    #search-box {
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 180px;
+      outline: none;
+    }
+    #search-box:focus {
+      border-color: #e94560;
+      box-shadow: 0 0 0 2px rgba(233,69,96,0.2);
+    }
+    #search-box::placeholder {
+      color: #999;
+    }
+    .search-highlight {
+      fill: none;
+      stroke: #e94560;
+      stroke-width: 3px;
+      pointer-events: none;
+    }
+    @keyframes highlight-pulse {
+      0%, 100% { stroke-opacity: 1; r: 20; }
+      50% { stroke-opacity: 0.5; r: 25; }
+    }
+    .search-highlight.active {
+      animation: highlight-pulse 1s ease-in-out infinite;
+    }
   </style>
 </head>
 <body>
   <div id="container">
     <div id="header">
       <h1><a href="https://github.com/davidbau/logitlenskit" style="color: inherit; text-decoration: none;">LogitLensKit</a> <a href="https://github.com/davidbau/logitlenskit/commits/main" style="color: inherit; text-decoration: none;">Call Graph Evolution</a> <a href="https://github.com/davidbau/logitlenskit#readme" style="color: inherit; text-decoration: none;" title="View source on GitHub"><svg viewBox="0 0 512 512" style="width:14px;height:14px;vertical-align:-1px"><circle cx="256" cy="256" r="256" fill="#181717"/><path fill="#fff" d="M335 499c-13 0-16-6-16-12l1-70c0-24-8-40-18-48 57-6 117-28 117-126 0-28-10-51-26-69 3-6 11-32-3-67 0 0-21-7-70 26-42-12-86-12 -128 0-49-33-70-26-70-26-14 35-6 61-3 67-16 18-26 41-26 69 0 98 59 120 116 126-7 7-14 18-16 35-15 6-52 17-74-22 0 0-14-24-40-26 0 0-25 0-1 16 0 0 16 7 28 37 0 0 15 50 86 34l1 44c0 6-3 12-16 12-14 0-12 17-12 17H347s2 -17-12-17Z"/></svg></a></h1>
+      <input type="text" id="search-box" placeholder="Search function...">
       <div id="stats">Loading...</div>
     </div>
     <div id="graph-container">
@@ -715,6 +744,11 @@
         });
 
         nodeMerge.attr('transform', d => `translate(${d.x},${d.y})`);
+
+        // Update search highlight position if active
+        if (typeof updateHighlightPosition === 'function') {
+          updateHighlightPosition();
+        }
       });
 
       // Tooltip and click handlers
@@ -873,6 +907,87 @@
     // Mobile orientation change - dimensions update after a delay on iOS
     window.addEventListener('orientationchange', () => {
       setTimeout(handleResize, 100);
+    });
+
+    // Search functionality
+    const searchBox = document.getElementById('search-box');
+    let highlightCircle = null;
+    let currentHighlightNode = null;
+
+    function highlightNode(searchTerm) {
+      // Remove existing highlight
+      if (highlightCircle) {
+        highlightCircle.remove();
+        highlightCircle = null;
+        currentHighlightNode = null;
+      }
+
+      if (!searchTerm || !searchTerm.trim()) return;
+
+      const term = searchTerm.trim().toLowerCase();
+      const snapshot = timeline[currentIndex];
+      if (!snapshot) return;
+
+      // Find matching node (case-insensitive partial match)
+      const matchingNode = snapshot.nodes.find(n =>
+        n.id.toLowerCase().includes(term)
+      );
+
+      if (matchingNode && nodePositions.has(matchingNode.id)) {
+        const pos = nodePositions.get(matchingNode.id);
+        currentHighlightNode = matchingNode.id;
+
+        // Create highlight circle in the SVG
+        const g = d3.select('svg g');
+        highlightCircle = g.insert('circle', ':first-child')
+          .attr('class', 'search-highlight active')
+          .attr('cx', pos.x)
+          .attr('cy', pos.y)
+          .attr('r', 25);
+
+        // Pan to the node
+        const svg = d3.select('svg');
+        const width = svg.node().clientWidth;
+        const height = svg.node().clientHeight;
+        const scale = 1.5;
+        const transform = d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(scale)
+          .translate(-pos.x, -pos.y);
+
+        svg.transition()
+          .duration(500)
+          .call(zoomBehavior.transform, transform);
+      }
+    }
+
+    // Update highlight position when simulation ticks
+    function updateHighlightPosition() {
+      if (highlightCircle && currentHighlightNode && nodePositions.has(currentHighlightNode)) {
+        const pos = nodePositions.get(currentHighlightNode);
+        highlightCircle.attr('cx', pos.x).attr('cy', pos.y);
+      }
+    }
+
+    searchBox.addEventListener('input', (e) => {
+      highlightNode(e.target.value);
+    });
+
+    searchBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchBox.value = '';
+        highlightNode('');
+        searchBox.blur();
+      }
+    });
+
+    // Keyboard shortcut: / to focus search
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchBox) {
+        e.preventDefault();
+        searchBox.focus();
+        searchBox.select();
+      }
     });
   </script>
   <!-- JSONP data load - works with file:// URLs -->
