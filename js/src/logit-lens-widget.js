@@ -68,7 +68,8 @@ var LogitLensWidget = (function() {
             #${uid} .popup-close:hover { color: #333; }
             #${uid} .topk-item {
                 padding: 4px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer;
-                display: flex; justify-content: space-between; font-size: calc(var(--ll-content-size, 10px) * 1.1);
+                display: flex; justify-content: space-between;
+                font-size: min(var(--ll-title-size, 16px), calc((var(--ll-content-size, 10px) + var(--ll-title-size, 16px)) / 2));
             }
             #${uid} .topk-item:hover { background: #f0f0f0; }
             #${uid} .topk-item.active { background: #f0f0f0; }
@@ -106,7 +107,7 @@ var LogitLensWidget = (function() {
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 200; min-width: 150px;
             }
             #${uid} .color-menu.visible { display: block; }
-            #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: calc(var(--ll-content-size, 10px) * 1.2); display: flex; align-items: stretch; }
+            #${uid} .color-menu-item { padding: 0; cursor: pointer; font-size: min(var(--ll-title-size, 16px), calc((var(--ll-content-size, 10px) + var(--ll-title-size, 16px)) / 2)); display: flex; align-items: stretch; }
             #${uid} .color-menu-item:hover, #${uid} .color-menu-item.picking { background: #f0f0f0; }
             #${uid} .color-menu-item .color-menu-label { padding: 8px 12px 8px 0; flex: 1; }
             #${uid} .color-menu-item .color-swatch { width: 32px; height: auto; min-height: 24px; border: 0; border-left: 1px solid #ccc; background: transparent; cursor: pointer; opacity: 0; transition: opacity 0.15s; padding: 0; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
@@ -583,6 +584,8 @@ var LogitLensWidget = (function() {
                 var tableWidth = table.offsetWidth;
                 var svg = document.getElementById(uid + "_chart");
                 svg.setAttribute("width", tableWidth);
+                // Update height (important when font size changes and chartHeight is auto)
+                svg.setAttribute("height", getActualChartHeight());
 
                 var firstInputCell = table.querySelector(".input-token");
                 if (firstInputCell) {
