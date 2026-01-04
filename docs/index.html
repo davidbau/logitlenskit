@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>LogitLensKit Documentation</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            background: light-dark(#fff, #121212);
+            color: light-dark(#333, #e0e0e0);
+        }
+        h1 { font-size: 28px; margin-bottom: 10px; }
+        h2 { font-size: 20px; margin-top: 30px; border-bottom: 1px solid light-dark(#ddd, #444); padding-bottom: 5px; }
+        a { color: light-dark(#1976d2, #64b5f6); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+        th, td { text-align: left; padding: 10px 12px; border: 1px solid light-dark(#ddd, #444); }
+        th { background: light-dark(#f5f5f5, #1e1e1e); }
+        code { background: light-dark(#f5f5f5, #2d2d2d); padding: 2px 6px; border-radius: 3px; font-size: 14px; }
+        pre { background: light-dark(#f5f5f5, #2d2d2d); padding: 15px; border-radius: 5px; overflow-x: auto; }
+        pre code { padding: 0; background: none; }
+        .back-link { margin-bottom: 20px; font-size: 14px; }
+        ol { padding-left: 20px; }
+        li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <p class="back-link"><a href="../">&larr; Back to Demo</a></p>
+
+    <h1>LogitLensKit Documentation</h1>
+
+    <p>LogitLensKit is a toolkit for visualizing <strong>logit lens</strong> analysis of transformer language models. It's designed for the specific workflow of collecting data from large models running on remote GPU servers (via <a href="https://ndif.us/">NDIF</a>) and displaying interactive visualizations in Jupyter notebooks or web pages.</p>
+
+    <h2>Quick Links</h2>
+
+    <table>
+        <tr>
+            <th>Document</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td><a href="DATA_FORMAT.html">DATA_FORMAT</a></td>
+            <td>How data flows from server to widget, and why each format exists</td>
+        </tr>
+        <tr>
+            <td><a href="PYTHON_API.html">PYTHON_API</a></td>
+            <td>Python functions for collecting and displaying logit lens data</td>
+        </tr>
+        <tr>
+            <td><a href="JAVASCRIPT_API.html">JAVASCRIPT_API</a></td>
+            <td>JavaScript widget API for custom integrations</td>
+        </tr>
+        <tr>
+            <td><a href="MODEL_SUPPORT.html">MODEL_SUPPORT</a></td>
+            <td>Supported model architectures and how to add new ones</td>
+        </tr>
+        <tr>
+            <td><a href="DEVELOPMENT.html">DEVELOPMENT</a></td>
+            <td>Contributing, testing, and project structure</td>
+        </tr>
+    </table>
+
+    <h2>The Core Problem</h2>
+
+    <p>A single forward pass through Llama-70B produces <strong>~550 MB</strong> of logit data per prompt. Transmitting this for every analysis would be impractical. LogitLensKit solves this by:</p>
+
+    <ol>
+        <li><strong>Server-side reduction</strong> — Computing top-k and trajectory extraction on NDIF</li>
+        <li><strong>Efficient formats</strong> — Transmitting only ~1 MB of essential data</li>
+        <li><strong>Interactive visualization</strong> — Exploring results without re-running the model</li>
+    </ol>
+
+    <h2>Typical Workflow</h2>
+
+<pre><code>from nnterp import StandardizedTransformer
+from logitlenskit import collect_logit_lens, show_logit_lens
+
+# Load model (runs on NDIF)
+model = StandardizedTransformer("meta-llama/Llama-3.1-70B-Instruct")
+
+# Collect logit lens data (~1 MB transmitted)
+data = collect_logit_lens("The capital of France is", model, remote=True)
+
+# Display interactive widget
+show_logit_lens(data, title="Capital of France")</code></pre>
+
+    <h2>Live Demo</h2>
+
+    <p>Try the widget: <a href="../">davidbau.github.io/logitlenskit</a></p>
+
+    <h2>Source Code</h2>
+
+    <p>GitHub: <a href="https://github.com/davidbau/logitlenskit">github.com/davidbau/logitlenskit</a></p>
+
+</body>
+</html>
