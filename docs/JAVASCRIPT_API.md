@@ -47,19 +47,19 @@ w1.linkColumnsTo(w2);  // Resize one, both update
 LogitLensWidget(container, data, uiState)
 ```
 
-Create an interactive logit lens visualization widget.
+This is the main entry point for creating a logit lens visualization. It takes logit lens data in either V1 or V2 JSON format, renders an interactive table and trajectory chart, and returns a widget interface for programmatic control. The widget handles all user interactions internally—clicking cells, pinning tokens, resizing columns—so you typically just need to call this once and let users explore.
 
 ### Parameters
 
 #### `container` (string | Element) - required
 
-Where to render the widget:
+The container specifies where the widget should be rendered in the DOM. You can provide either a CSS selector string or a direct reference to a DOM element. The widget will fill the container and manage its own layout within that space.
 - CSS selector: `"#myDiv"`, `".container"`, `"#main .viz"`
 - DOM Element: `document.getElementById("myDiv")`
 
 #### `data` (Object) - required
 
-Logit lens data with structure:
+The data object contains the logit lens analysis results. The widget accepts both V1 and V2 formats (see [DATA_FORMAT.md](DATA_FORMAT.md)), automatically detecting and normalizing V2 data internally. Here is the V1 structure that the widget uses internally:
 
 ```javascript
 {
@@ -87,7 +87,7 @@ See [DATA_FORMAT.md](DATA_FORMAT.md) for complete specification.
 
 #### `uiState` (Object) - optional
 
-Saved UI state to restore:
+The uiState parameter allows you to restore a previously saved widget configuration or set initial display options. You can capture the current state with `widget.getState()` and pass it here to recreate an identical view. This is useful for saving user preferences, creating reproducible visualizations, or duplicating widgets.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -120,6 +120,8 @@ Widget interface object:
 
 ## Widget Interface
 
+The widget returns an interface object with methods for programmatic control. These methods let you save and restore state, synchronize column widths between widgets, and access the unique widget identifier.
+
 ### `getState()`
 
 ```javascript
@@ -144,7 +146,7 @@ var colState = widget.getColumnState();
 // { cellWidth: 44, inputTokenWidth: 100, maxTableWidth: null }
 ```
 
-Returns only the column-related state (for linking).
+This method returns only the column-sizing portion of the widget state. It is primarily used internally for widget linking, but you can also use it to read current column dimensions without the other state properties.
 
 ### `setColumnState(state, fromSync)`
 
@@ -152,7 +154,7 @@ Returns only the column-related state (for linking).
 widget.setColumnState({ cellWidth: 60, inputTokenWidth: 120 });
 ```
 
-Update column sizing programmatically.
+This method updates the widget's column dimensions programmatically. You can use it to set specific column widths from code rather than requiring the user to drag resize handles. The `fromSync` parameter is an internal flag used during widget linking to prevent infinite update loops.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -165,7 +167,7 @@ Update column sizing programmatically.
 widget1.linkColumnsTo(widget2);
 ```
 
-Establish bidirectional column synchronization. When either widget's columns are resized, the other updates automatically.
+This method establishes bidirectional column synchronization between two widgets. When either widget's columns are resized by dragging, the other widget updates automatically to match. This is useful for side-by-side model comparisons where you want both visualizations to maintain the same column layout as users explore.
 
 **Synced properties**: `cellWidth`, `inputTokenWidth`, `maxTableWidth`
 
@@ -177,13 +179,17 @@ Establish bidirectional column synchronization. When either widget's columns are
 widget1.unlinkColumns(widget2);
 ```
 
-Remove column synchronization between widgets.
+This method removes the column synchronization that was previously established with `linkColumnsTo()`. After unlinking, each widget can be resized independently without affecting the other.
 
 ---
 
 ## Interactive Features
 
+The widget provides rich interactivity without requiring any additional code. Users can explore the data through clicking, hovering, and dragging gestures. This section documents all available interactions so you can guide users or understand what's possible.
+
 ### Table Gestures
+
+The main table responds to various mouse interactions. Clicking cells opens detailed popups, clicking input tokens pins rows for comparison, and dragging borders resizes columns.
 
 | Gesture | Target | Effect |
 |---------|--------|--------|
@@ -201,6 +207,8 @@ Remove column synchronization between widgets.
 
 ### Popup Interactions
 
+When you click a prediction cell, a popup appears showing all top-k predictions at that layer and position. The popup allows you to pin tokens for trajectory tracking.
+
 | Gesture | Effect |
 |---------|--------|
 | **Click** token | Pin/unpin token trajectory (new group) |
@@ -210,7 +218,7 @@ Remove column synchronization between widgets.
 
 ### Token Pinning
 
-Clicking a token in the popup pins it for persistent trajectory display:
+Token pinning is the primary way to compare how different tokens' probabilities evolve across layers. When you click a token in the popup, it becomes "pinned" and its trajectory remains visible in the chart even after closing the popup. Pinned tokens are organized into colored groups, and the chart shows the sum of probabilities for all tokens in each group.
 - First pin creates a new colored group
 - Shift+click adds tokens to existing group
 - Similar tokens show grouping hints
@@ -218,7 +226,7 @@ Clicking a token in the popup pins it for persistent trajectory display:
 
 ### Row Pinning
 
-Clicking an input token pins that row:
+Row pinning allows you to compare trajectories across different input positions. When you click an input token in the leftmost column, that row becomes pinned and its trajectory appears in the chart with a distinct line style (solid, dashed, or dotted). This lets you see how the model's predictions differ for different parts of the input.
 - Each pinned row uses different line style (solid, dashed, dotted)
 - Auto-pins highest probability token (>5%) at position
 - Yellow background indicates pinned rows
@@ -226,7 +234,7 @@ Clicking an input token pins that row:
 
 ### Color Modes
 
-Access via "(colored by X)" button:
+The table cells can be colored to highlight probability patterns. By default, cells are colored by the top-1 prediction's probability (darker = higher probability). You can change the color mode by clicking the "(colored by X)" text below the title to open a menu with options.
 - **top prediction**: Cells colored by top-1 probability
 - **[specific token]**: Cells colored by that token's probability
 - **none**: All cells white
@@ -235,7 +243,7 @@ Access via "(colored by X)" button:
 
 ## Resize Handles
 
-Hover over "showing every N layers..." to reveal all handles:
+The widget includes several draggable resize handles for customizing the layout. These handles appear when you hover over the "showing every N layers..." text at the bottom of the table. You can drag these handles to adjust column widths, chart height, and the overall table dimensions.
 
 | Handle | Location | Effect |
 |--------|----------|--------|
@@ -250,7 +258,7 @@ Hover over "showing every N layers..." to reveal all handles:
 
 ## Layer Stride Display
 
-With many layers (e.g., 80 in Llama 70B), not all can display at once. The widget:
+Large models like Llama-70B have 80 layers, which cannot all be displayed as columns without making each column too narrow to read. The widget automatically computes a "stride" to show evenly-spaced layers that fit the available width. As you resize columns, the stride adjusts dynamically.
 1. Computes how many columns fit given cell width and container
 2. Shows evenly-spaced layers (e.g., "showing every 4 layers")
 3. Dragging column borders adjusts stride dynamically
@@ -259,13 +267,13 @@ With many layers (e.g., 80 in Llama 70B), not all can display at once. The widge
 
 ## CSS Scoping
 
-Each widget injects scoped CSS using unique ID prefix (`#ll_interact_0`, etc.), allowing multiple independent widgets on the same page.
+Each widget instance generates a unique ID (like `ll_interact_0`, `ll_interact_1`, etc.) and injects CSS rules scoped to that ID. This ensures that multiple widgets on the same page remain completely independent—styling one widget does not affect others, and their interactive states are isolated.
 
 ---
 
 ## Browser Compatibility
 
-Requires modern browser with:
+The widget uses modern CSS and JavaScript features for its interactive functionality. It requires a browser that supports the following features, which are available in all major browsers released since late 2023.
 - CSS `:has()` selector (Chrome 105+, Safari 15.4+, Firefox 121+)
 - ES6 template literals
 - SVG support
@@ -274,13 +282,19 @@ Requires modern browser with:
 
 ## Examples
 
+These examples demonstrate common usage patterns for the widget. Each example shows the minimal code needed to accomplish a specific task.
+
 ### Basic Usage
+
+The simplest way to create a widget is to pass just the container selector and data object. The widget will use default settings for everything else.
 
 ```javascript
 var widget = LogitLensWidget("#viz", data);
 ```
 
 ### Custom Initial State
+
+You can customize the widget's appearance by passing a uiState object with your preferred settings. This example creates a widget with a custom title, wider columns, taller chart, and no cell coloring.
 
 ```javascript
 var widget = LogitLensWidget("#viz", data, {
@@ -293,6 +307,8 @@ var widget = LogitLensWidget("#viz", data, {
 
 ### Save and Restore State
 
+This pattern demonstrates how to persist the widget's state across page reloads using localStorage. The user's customizations (pinned tokens, column widths, etc.) are preserved automatically.
+
 ```javascript
 // Save
 var state = widget.getState();
@@ -304,6 +320,8 @@ var widget = LogitLensWidget("#viz", data, saved);
 ```
 
 ### Linked Widgets for Comparison
+
+When comparing two models on the same prompt, linking their columns ensures they stay synchronized. This example creates two widgets side by side and links their column sizing so resizing one automatically resizes the other.
 
 ```javascript
 var widget1 = LogitLensWidget("#viz1", data1, { title: "Llama 8B" });
@@ -318,10 +336,12 @@ widget1.unlinkColumns(widget2);
 
 ### Duplicate Widget
 
+You can create an exact copy of a widget—including all user customizations—by passing the first widget's state to a new widget constructor. This is useful for creating a snapshot of the current view or for A/B comparisons with identical starting points.
+
 ```javascript
 var widget1 = LogitLensWidget("#viz1", data);
 // ... user interacts, changes settings ...
 
-// Create identical copy
+// Create identical copy with same pinned tokens, column widths, etc.
 var widget2 = LogitLensWidget("#viz2", data, widget1.getState());
 ```
