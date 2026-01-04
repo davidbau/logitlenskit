@@ -1,5 +1,12 @@
 # Python API Reference
 
+The Python API provides two main functions:
+
+1. **`collect_logit_lens()`** — Runs on NDIF, returns compact tensor data
+2. **`show_logit_lens()`** — Converts to widget format, displays in Jupyter
+
+The design optimizes for NDIF's remote execution model: expensive computation happens on the server, and only ~1 MB of summary data is transmitted to the client.
+
 ## Installation
 
 ```bash
@@ -12,56 +19,46 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```python
-from nnsight import LanguageModel
-from logitlenskit import collect_logit_lens_topk_efficient, show_logit_lens
+from nnterp import StandardizedTransformer
+from logitlenskit import collect_logit_lens, show_logit_lens
 
-# Load model
-model = LanguageModel("meta-llama/Llama-3.1-8B", device_map="auto")
+# Load model via nnterp for standardized access
+model = StandardizedTransformer("meta-llama/Llama-3.1-8B")
 
-# Collect data
-data = collect_logit_lens_topk_efficient(
-    "The capital of France is",
-    model,
-    top_k=5,
-    track_across_layers=True,
-    remote=True
-)
+# Collect data (trajectories included by default)
+data = collect_logit_lens("The capital of France is", model, remote=True)
 
 # Display in Jupyter
-show_logit_lens(data, model.tokenizer, title="Capital of France")
+show_logit_lens(data, title="Capital of France")
 ```
 
 ---
 
 ## Data Collection
 
-### `collect_logit_lens_topk_efficient`
+### `collect_logit_lens`
 
 ```python
-def collect_logit_lens_topk_efficient(
+def collect_logit_lens(
     prompt: str,
     model,
-    top_k: int = 5,
-    track_across_layers: bool = False,
-    remote: bool = True,
+    k: int = 5,
     layers: Optional[List[int]] = None,
-    model_type: Optional[str] = None,
+    remote: bool = True,
 ) -> Dict
 ```
 
-Collect logit lens data with server-side reduction for minimal bandwidth. **This is the recommended function for NDIF remote execution.**
+Collect logit lens data with server-side reduction for minimal bandwidth. Probability trajectories are always computed for all tokens appearing in top-k at any layer.
 
 #### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `prompt` | str | required | Input text to analyze |
-| `model` | LanguageModel | required | nnsight LanguageModel instance |
-| `top_k` | int | 5 | Number of top predictions per layer/position |
-| `track_across_layers` | bool | False | Track probability trajectories (required for visualization) |
-| `remote` | bool | True | Use NDIF remote execution |
+| `model` | StandardizedTransformer | required | nnterp StandardizedTransformer instance |
+| `k` | int | 5 | Number of top predictions per layer/position |
 | `layers` | List[int] | None | Specific layer indices (default: all) |
-| `model_type` | str | None | Model architecture (auto-detected if None) |
+| `remote` | bool | True | Use NDIF remote execution |
 
 #### Returns
 
@@ -69,40 +66,33 @@ Dict containing:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `tokens` | List[str] | Input token strings |
+| `model` | str | Model name/path |
+| `input` | List[str] | Input token strings |
 | `layers` | List[int] | Layer indices analyzed |
-| `top_indices` | Tensor[n_layers, seq_len, k] | Top-k token indices |
-| `top_probs` | Tensor[n_layers, seq_len, k] | Top-k probabilities |
+| `topk` | Tensor[n_layers, seq_len, k] | Top-k token indices (int32) |
+| `tracked` | List[Tensor] | Unique token indices per position (int32) |
+| `probs` | List[Tensor[n_layers, n_tracked]] | Probability trajectories (float32) |
+| `vocab` | Dict[int, str] | Token index to string mapping |
 
-If `track_across_layers=True`, additionally:
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `tracked_indices` | List[Tensor] | Unique token indices per position |
-| `tracked_probs` | List[Tensor[n_layers, n_tracked]] | Probability trajectories |
+Note: Top-k probabilities are not stored separately since they can be looked up from the `probs` trajectories, reducing bandwidth.
 
 #### Example
 
 ```python
-# Basic collection (no trajectories)
-data = collect_logit_lens_topk_efficient(
-    "Hello world",
+# Collect logit lens data
+data = collect_logit_lens(
+    "The capital of France is",
     model,
-    top_k=3,
+    k=5,
     remote=True
 )
 
-# With trajectories for visualization
-data = collect_logit_lens_topk_efficient(
-    "The quick brown fox",
-    model,
-    top_k=5,
-    track_across_layers=True,
-    remote=True
-)
+# Access results
+print(data["input"])      # ['The', ' capital', ' of', ' France', ' is']
+print(data["topk"].shape) # [80, 5, 5] for 80 layers, 5 positions, k=5
 
 # Analyze specific layers only
-data = collect_logit_lens_topk_efficient(
+data = collect_logit_lens(
     "Test prompt",
     model,
     layers=[0, 10, 20, 30, 40],  # Every 10th layer
@@ -114,28 +104,7 @@ data = collect_logit_lens_topk_efficient(
 
 For Llama-70B (80 layers, 128k vocab, 20 tokens):
 - Naive (full logits): ~819 MB
-- This function (top-5): ~64 KB
-- With trajectories: ~320 KB total
-
----
-
-### `collect_logit_lens_topk`
-
-```python
-def collect_logit_lens_topk(
-    prompt: str,
-    model,
-    top_k: int = 5,
-    track_across_layers: bool = False,
-    remote: bool = True,
-    layers: Optional[List[int]] = None,
-    model_type: Optional[str] = None,
-) -> Dict
-```
-
-Simple version that downloads full logits before processing. **Use `collect_logit_lens_topk_efficient` instead for better performance.**
-
-Same parameters and return format as `collect_logit_lens_topk_efficient`.
+- This function (top-5 with trajectories): ~320 KB total
 
 ---
 
@@ -198,17 +167,12 @@ IPython HTML object that displays the interactive widget.
 #### Example
 
 ```python
-from logitlenskit import collect_logit_lens_topk_efficient, show_logit_lens
+from logitlenskit import collect_logit_lens, show_logit_lens
 
-data = collect_logit_lens_topk_efficient(
-    "The capital of France is",
-    model,
-    track_across_layers=True,
-    remote=True
-)
+data = collect_logit_lens("The capital of France is", model, remote=True)
 
 # Display widget
-show_logit_lens(data, model.tokenizer, title="France Capital")
+show_logit_lens(data, title="France Capital")
 ```
 
 ---

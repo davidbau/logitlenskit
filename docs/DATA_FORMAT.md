@@ -1,15 +1,15 @@
 # Data Format Specification
 
-This document describes the data formats used in LogitLensKit at each stage of the pipeline, from raw model activations to JavaScript visualization.
+LogitLensKit uses a carefully designed data format optimized for a specific workflow: collecting logit lens data from **large language models running on remote GPU servers** (NDIF) and visualizing it in **browser-based interactive widgets**.
+
+The core challenge is **bandwidth**: a single forward pass through Llama-70B produces ~550 MB of logit data per prompt. Transmitting this for every analysis would be impractical. Our format reduces this to **<1 MB** by computing summaries on the server and transmitting only what the visualization needs.
 
 ## Table of Contents
 
 1. [Pipeline Overview](#pipeline-overview)
 2. [Size Analysis](#size-analysis)
-3. [Raw Python Format](#raw-python-format)
-4. [Widget JSON Formats](#widget-json-formats)
-   - [V1 Format (Legacy)](#v1-format-legacy)
-   - [V2 Format (Compact)](#v2-format-compact)
+3. [Raw Python Format](#raw-python-format) — Server output, tensor-based
+4. [Widget JSON Formats](#widget-json-formats) — Browser input, string-based
 5. [Format Conversion](#format-conversion)
 6. [Rationale and Design Decisions](#rationale-and-design-decisions)
 7. [Limitations](#limitations)
@@ -17,6 +17,8 @@ This document describes the data formats used in LogitLensKit at each stage of t
 ---
 
 ## Pipeline Overview
+
+The data flows through four stages, with dramatic size reduction happening on the server:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -28,14 +30,24 @@ This document describes the data formats used in LogitLensKit at each stage of t
 │  │   States    │───▶│   Logits    │───▶│ Trajectories│───▶│    JSON     │  │
 │  │  (Server)   │    │  (Server)   │    │  (Server)   │    │  (Client)   │  │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
-│       35 MB            547 MB             491 KB            823 KB         │
+│       35 MB            547 MB             320 KB            823 KB         │
 │                                                                              │
-│  ◀──────────────── Server Side ────────────────▶ ◀─── Transmitted ───▶     │
+│  ◀──────────────── NDIF Server ────────────────▶ ◀──── Transmitted ────▶   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The key insight is performing heavy computation (softmax, top-k, unique) on the NDIF server, transmitting only essential results to the client. This reduces bandwidth by **~99.85%**.
+**Stage 1: Hidden States** — The model's internal representations at each layer. Large but manageable.
+
+**Stage 2: Full Logits** — Hidden states projected to vocabulary space (128k tokens). This is where size explodes: `80 layers × seq_len × 128k × 4 bytes`.
+
+**Stage 3: Top-K + Trajectories** — The critical reduction step. We keep only:
+- Which tokens are in the top-k at each layer/position (indices, not probabilities)
+- Probability trajectories for tokens that *ever* appear in top-k
+
+**Stage 4: Widget JSON** — Token indices decoded to strings, formatted for JavaScript consumption.
+
+The key insight: **all expensive computation happens on the NDIF server**. The client receives only the ~1000 unique tokens and their probability curves needed for visualization.
 
 ---
 
@@ -73,69 +85,103 @@ The V2 format achieves **~70% reduction** over V1 by eliminating trajectory dupl
 
 ## Raw Python Format
 
-Output from `collect_logit_lens_topk_efficient()` with `track_across_layers=True`:
+This is what `collect_logit_lens()` returns—the format transmitted from the NDIF server to your Python client. It uses **tensors** (not strings) because tensor operations are efficient and the data will be further processed before visualization.
 
 ```python
 {
-    "tokens": List[str],              # Input token strings
+    "model": str,                     # Model name/path
+    "input": List[str],               # Input token strings
     "layers": List[int],              # Layer indices analyzed
-    "top_indices": Tensor,            # [n_layers, seq_len, k] - int64
-    "top_probs": Tensor,              # [n_layers, seq_len, k] - float32
-    "tracked_indices": List[Tensor],  # Per-position unique token indices
-    "tracked_probs": List[Tensor],    # Per-position probability trajectories
+    "topk": Tensor,                   # [n_layers, seq_len, k] - int32, indices only
+    "tracked": List[Tensor],          # Per-position unique token indices (int32)
+    "probs": List[Tensor],            # Per-position probability trajectories (float32)
+    "vocab": Dict[int, str],          # Token index -> string mapping
 }
 ```
 
+### Why This Structure?
+
+The format is organized around two complementary views of the same data:
+
+1. **`topk`** — "What does the model predict at each layer?" Answers the question cell-by-cell.
+2. **`tracked` + `probs`** — "How do specific tokens' probabilities evolve?" Answers the trajectory question.
+
+These are separated because they have different shapes and access patterns. The visualization needs both: `topk` to populate the grid cells, and `probs` to draw the trajectory charts.
+
 ### Field Details
 
-#### `tokens`
-List of input token strings as decoded by the tokenizer. Leading spaces are preserved:
+#### `model`
+Model identifier for provenance tracking:
+```python
+"meta-llama/Llama-3.1-70B-Instruct"
+```
+
+#### `input`
+The prompt tokenized and decoded back to strings. This is what appears as row labels in the visualization. Leading spaces are preserved because they're semantically meaningful (` the` vs `the`):
 ```python
 ["<|begin_of_text|>", "The", " quick", " brown", " fox"]
 ```
 
 #### `layers`
-List of layer indices that were analyzed:
+Which layers were analyzed. Usually all of them, but can be a subset for faster analysis:
 ```python
-[0, 1, 2, ..., 79]  # All 80 layers
-[0, 4, 8, 12, ...]  # Every 4th layer (for faster analysis)
+[0, 1, 2, ..., 79]  # All 80 layers (default)
+[0, 10, 20, ..., 70]  # Every 10th layer (faster)
 ```
 
-#### `top_indices` and `top_probs`
-Tensors of shape `[n_layers, seq_len, k]` containing the top-k predictions:
+#### `topk`
+**The grid data.** A 3D tensor of shape `[n_layers, seq_len, k]` containing token indices ranked by probability at each cell:
 ```python
-# top_indices[layer, position, rank] -> vocabulary index
-top_token_idx = top_indices[5, 3, 0]  # Top-1 at layer 5, position 3
-
-# top_probs[layer, position, rank] -> probability (0-1)
-top_prob = top_probs[5, 3, 0]  # ~0.234
+topk[layer, position, rank]  # -> vocabulary index (int32)
+topk[5, 3, 0]  # Top-1 prediction at layer 5, position 3
+topk[5, 3, :]  # All k predictions at that cell
 ```
 
-#### `tracked_indices`
-List of length `seq_len`. Each element is a Tensor of unique token indices that appeared in top-k at **any** layer for that position:
+**Why no probabilities here?** Because they're redundant—every token in `topk` is also in `tracked`, so its probability at any layer can be looked up from `probs`. Omitting duplicate probability data saves bandwidth.
+
+#### `tracked`
+**The trajectory index.** For each input position, which tokens should we track? This is the union of all tokens that appeared in top-k at *any* layer:
 ```python
-tracked_indices[0]  # Tensor([1234, 5678, 9012, ...])
-# Typically 20-140 unique tokens per position
+tracked[0]  # Tensor([1234, 5678, 9012, ...]) — typically 20-140 tokens
+tracked[3]  # Different set for position 3
 ```
 
-#### `tracked_probs`
-List of length `seq_len`. Each element is a Tensor of shape `[n_layers, n_tracked]`:
+Note: We track the union across all layers because a token's rank can change dramatically—a token ranked #47 at layer 0 might become #1 by layer 40. Tracking only the final layer's top-k would miss these transitions, which are often the most informative part of the visualization.
+
+#### `probs`
+**The trajectory data.** For each position, a matrix of probability values across layers:
 ```python
-tracked_probs[0]        # Shape: [80, 101] for 80 layers, 101 tracked tokens
-tracked_probs[0][:, 0]  # Trajectory of first tracked token across all 80 layers
+probs[0]        # Shape: [n_layers, n_tracked] e.g., [80, 101]
+probs[0][:, i]  # Trajectory for tracked[0][i] across all 80 layers
+probs[0][j, i]  # Probability at layer j for token tracked[0][i]
 ```
 
-This is where the trajectory information lives - each column is one token's probability evolution across layers.
+This is the heart of the logit lens visualization—watching how token probabilities rise and fall as information flows through the network.
+
+#### `vocab`
+Token indices → strings for everything in `topk` and `tracked`:
+```python
+vocab[1234]  # " the"
+vocab[5678]  # " Paris"
+```
+
+Why include this? So downstream code doesn't need access to the model's tokenizer. The data becomes self-contained—you can save it to disk, send it to another machine, or convert it to widget JSON without having the model loaded.
 
 ---
 
 ## Widget JSON Formats
 
-LogitLensWidget accepts two JSON formats. V2 is recommended for new implementations.
+The JavaScript widget needs data in a different form than the Python format:
+
+- **Strings instead of indices** — JavaScript will display tokens, not look them up
+- **JSON-serializable** — No tensors, just arrays and objects
+- **Trajectory deduplication** — Each trajectory stored once, referenced many times
+
+LogitLensWidget accepts two JSON formats. **V2 is recommended** for all new implementations.
 
 ### V2 Format (Compact)
 
-**Recommended.** Introduced to eliminate trajectory duplication and reduce bandwidth.
+V2 is organized around the insight that trajectories are the expensive part—and each unique token's trajectory only needs to be stored once per position, not once per layer where it appears.
 
 ```javascript
 {
@@ -236,32 +282,29 @@ For 80 layers × 5 top-k × 14 positions = **5,600 trajectory copies**, when onl
 
 ## Format Conversion
 
+The Python format (tensors + vocab dict) must be converted to widget JSON format (all strings) before display. This happens automatically in `show_logit_lens()`, but you can do it manually:
+
 ### Python to Widget (V2)
 
 ```python
-from logitlenskit import collect_logit_lens_topk_efficient
+from logitlenskit import collect_logit_lens
 from logitlenskit.display import format_data_for_widget
 
 # Collect raw data from NDIF
-raw_data = collect_logit_lens_topk_efficient(
-    prompt,
-    model,
-    top_k=5,
-    track_across_layers=True,
-    remote=True
-)
+raw_data = collect_logit_lens(prompt, model, remote=True)
 
 # Convert to V2 widget format
-widget_data = format_data_for_widget(
-    raw_data,
-    model.tokenizer,
-    model_name="meta-llama/Llama-3.1-70B"
-)
+widget_data = format_data_for_widget(raw_data)
 
-# JSON-serializable
+# Now JSON-serializable
 import json
 json_str = json.dumps(widget_data)
 ```
+
+The conversion does three things:
+1. Decodes token indices to strings using `vocab`
+2. Reorganizes `probs` matrices into per-token trajectory dicts
+3. Adds metadata (version, timestamp, model name)
 
 ### JavaScript Normalization
 
@@ -307,10 +350,10 @@ Computing top-k on the server reduces transmission from 547 MB to <1 MB.
 
 The visualization shows how token probabilities **evolve** across layers. Without trajectory tracking, we'd only see snapshots at each layer with no continuity.
 
-The `track_across_layers=True` option:
+`collect_logit_lens()` always computes trajectories because they're essential for the visualization:
 1. Finds all tokens appearing in top-k at **any** layer
 2. Extracts their probabilities at **all** layers
-3. Enables smooth trajectory visualization
+3. Enables the smooth trajectory charts that make patterns visible
 
 ### Why V2 Over V1?
 
@@ -369,11 +412,9 @@ Token strings depend on tokenizer behavior:
 
 The widget displays tokens as-is; escaping/formatting is the caller's responsibility.
 
-### Missing Tokens
+### Missing Trajectories
 
-If a token appears in top-k at one layer but not in `tracked`, its trajectory will be zeros. This can happen if:
-- The collection used `track_across_layers=False`
-- The token was added manually to visualization
+If you construct widget data manually and a token appears in `topk` but not in `tracked`, the widget will show it with zero probability. Always ensure that every token in `topk` has a corresponding trajectory in `tracked`/`probs`.
 
 ---
 

@@ -1,11 +1,14 @@
 # JavaScript API Reference
 
-## Installation
+The LogitLensWidget is a **self-contained, zero-dependency** JavaScript visualization for logit lens data. It renders as pure HTML/CSS/SVG—no React, no D3, no build step required.
 
-```bash
-cd js
-npm install
-```
+**Design philosophy:**
+- Works anywhere: Jupyter notebooks, static HTML pages, web apps
+- No installation: just include the script and call `LogitLensWidget()`
+- Interactive by default: click, hover, drag, pin tokens—all built in
+- Linkable widgets: compare models side-by-side with synchronized sizing
+
+## Installation
 
 For browser use, include the script directly:
 
@@ -13,17 +16,27 @@ For browser use, include the script directly:
 <script src="https://davidbau.github.io/logitlenskit/js/src/logit-lens-widget.js"></script>
 ```
 
+For local development:
+
+```bash
+cd js
+npm install
+npm test  # Run tests
+```
+
 ## Quick Start
 
 ```javascript
-// Create widget
+// Create widget in a container
 var widget = LogitLensWidget("#container", data);
 
 // With custom title
 var widget = LogitLensWidget("#container", data, { title: "My Analysis" });
 
-// Link two widgets for synchronized column sizing
-widget1.linkColumnsTo(widget2);
+// Compare two models with linked column sizing
+var w1 = LogitLensWidget("#viz1", llamaData, { title: "Llama 70B" });
+var w2 = LogitLensWidget("#viz2", gptData, { title: "GPT-J 6B" });
+w1.linkColumnsTo(w2);  // Resize one, both update
 ```
 
 ---
