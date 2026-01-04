@@ -225,45 +225,45 @@ describe('LogitLensWidget Font Size', () => {
     test('getFontSize should return default values', () => {
         const widget = LogitLensWidget('#test-container', sampleData);
         const sizes = widget.getFontSize();
-        expect(sizes.title).toBe('16px');
-        expect(sizes.content).toBe('10px');
-    });
-
-    test('setFontSize should update font sizes', () => {
-        const widget = LogitLensWidget('#test-container', sampleData);
-        widget.setFontSize({ title: '20px', content: '14px' });
-        const sizes = widget.getFontSize();
         expect(sizes.title).toBe('20px');
         expect(sizes.content).toBe('14px');
     });
 
+    test('setFontSize should update font sizes', () => {
+        const widget = LogitLensWidget('#test-container', sampleData);
+        widget.setFontSize({ title: '24px', content: '18px' });
+        const sizes = widget.getFontSize();
+        expect(sizes.title).toBe('24px');
+        expect(sizes.content).toBe('18px');
+    });
+
     test('setFontSize(null) should clear overrides', () => {
         const widget = LogitLensWidget('#test-container', sampleData);
-        widget.setFontSize({ title: '20px', content: '14px' });
+        widget.setFontSize({ title: '24px', content: '18px' });
         widget.setFontSize(null);
         const sizes = widget.getFontSize();
         // Should return to defaults
-        expect(sizes.title).toBe('16px');
-        expect(sizes.content).toBe('10px');
+        expect(sizes.title).toBe('20px');
+        expect(sizes.content).toBe('14px');
     });
 
     test('should auto-detect font size changes via setFontSize API', async () => {
         const widget = LogitLensWidget('#test-container', sampleData);
 
         // Use API to set font sizes (this sets on widget element directly)
-        widget.setFontSize({ content: '14px' });
+        widget.setFontSize({ content: '18px' });
 
         // Give time for rebuild
         await new Promise(resolve => setTimeout(resolve, 50));
 
         // Widget should reflect the change
         const sizes = widget.getFontSize();
-        expect(sizes.content).toBe('14px');
+        expect(sizes.content).toBe('18px');
     });
 
     test('should detect inherited font size from document root', async () => {
         // Set on document root BEFORE creating widget
-        document.documentElement.style.setProperty('--ll-content-size', '14px');
+        document.documentElement.style.setProperty('--ll-content-size', '18px');
 
         const widget = LogitLensWidget('#test-container', sampleData);
 
@@ -271,7 +271,7 @@ describe('LogitLensWidget Font Size', () => {
         // Note: JSDOM may not fully support custom property inheritance
         const sizes = widget.getFontSize();
         // Accept either inherited value or default fallback
-        expect(['14px', '10px']).toContain(sizes.content);
+        expect(['18px', '14px']).toContain(sizes.content);
     });
 
     test('should rebuild table when font size changes', async () => {
