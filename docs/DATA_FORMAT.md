@@ -7,11 +7,11 @@ The core challenge is **bandwidth**: a single forward pass through Llama-70B pro
 ## Table of Contents
 
 1. [Pipeline Overview](#pipeline-overview)
-2. [Size Analysis](#size-analysis)
-3. [Raw Python Format](#raw-python-format) — Server output, tensor-based
-4. [Widget JSON Formats](#widget-json-formats) — Browser input, string-based
-5. [Format Conversion](#format-conversion)
-6. [Rationale and Design Decisions](#rationale-and-design-decisions)
+2. [Raw Python Format](#raw-python-format) — Server output, tensor-based
+3. [Widget JSON Formats](#widget-json-formats) — Browser input, string-based
+4. [Format Conversion](#format-conversion)
+5. [Rationale and Design Decisions](#rationale-and-design-decisions)
+6. [Size Analysis](#size-analysis)
 7. [Limitations](#limitations)
 
 ---
@@ -48,38 +48,6 @@ The data flows through four stages, with dramatic size reduction happening on th
 **Stage 4: Widget JSON** — Token indices decoded to strings, formatted for JavaScript consumption.
 
 The key insight: **all expensive computation happens on the NDIF server**. The client receives only the ~1000 unique tokens and their probability curves needed for visualization.
-
----
-
-## Size Analysis
-
-### Llama 3.1 70B Example (14 tokens, 80 layers)
-
-| Stage | Description | Size | Reduction |
-|-------|-------------|------|-----------|
-| Hidden States | Raw activations per layer | 35.0 MB | baseline |
-| Full Logits | Projected to vocabulary | **546.9 MB** | — |
-| Top-K Only | Indices + probabilities | 43.8 KB | 12,800× |
-| With Trajectories | + tracked token probs | 491.1 KB | 1,140× |
-| V2 JSON | Widget-ready format | 822.8 KB | **681×** |
-
-### Actual Measurements
-
-| Dataset | Model | Tokens | Layers | V2 Size |
-|---------|-------|--------|--------|---------|
-| Preview (Llama) | Llama-3.1-70B | 14 | 80 | 823 KB |
-| Preview (GPT-J) | GPT-J-6B | 13 | 28 | 107 KB |
-| Test fixture | Synthetic | 4 | 4 | 1.0 KB |
-
-### V1 vs V2 Format Comparison
-
-| Metric | V1 Format | V2 Format | Savings |
-|--------|-----------|-----------|---------|
-| Test fixture (4×4) | 3.3 KB | 1.0 KB | 69% |
-| Trajectory arrays | 36 | 15 | 58% |
-| Llama preview (est.) | 3.0 MB | 823 KB | 73% |
-
-The V2 format achieves **~70% reduction** over V1 by eliminating trajectory duplication.
 
 ---
 
@@ -375,6 +343,38 @@ V2 was introduced for NDIF bandwidth optimization. The JavaScript normalizes V2�
 4. **Compression**: JSON compresses well with gzip (~70% reduction)
 
 For very large datasets, binary formats (e.g., MessagePack, Protocol Buffers) could be considered, but JSON is sufficient for typical prompt lengths.
+
+---
+
+## Size Analysis
+
+### Llama 3.1 70B Example (14 tokens, 80 layers)
+
+| Stage | Description | Size | Reduction |
+|-------|-------------|------|-----------|
+| Hidden States | Raw activations per layer | 35.0 MB | baseline |
+| Full Logits | Projected to vocabulary | **546.9 MB** | — |
+| Top-K Only | Indices + probabilities | 43.8 KB | 12,800× |
+| With Trajectories | + tracked token probs | 491.1 KB | 1,140× |
+| V2 JSON | Widget-ready format | 822.8 KB | **681×** |
+
+### Actual Measurements
+
+| Dataset | Model | Tokens | Layers | V2 Size |
+|---------|-------|--------|--------|---------|
+| Preview (Llama) | Llama-3.1-70B | 14 | 80 | 823 KB |
+| Preview (GPT-J) | GPT-J-6B | 13 | 28 | 107 KB |
+| Test fixture | Synthetic | 4 | 4 | 1.0 KB |
+
+### V1 vs V2 Format Comparison
+
+| Metric | V1 Format | V2 Format | Savings |
+|--------|-----------|-----------|---------|
+| Test fixture (4×4) | 3.3 KB | 1.0 KB | 69% |
+| Trajectory arrays | 36 | 15 | 58% |
+| Llama preview (est.) | 3.0 MB | 823 KB | 73% |
+
+The V2 format achieves **~70% reduction** over V1 by eliminating trajectory duplication.
 
 ---
 
