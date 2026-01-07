@@ -15,16 +15,20 @@ Example:
 
 from .collect import collect_logit_lens
 from .display import show_logit_lens, display_logit_lens, to_js_format
-from .models import detect_model_type, get_model_config, resolve_accessor
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "collect_logit_lens",
     "show_logit_lens",
     "display_logit_lens",
     "to_js_format",
-    "detect_model_type",
-    "get_model_config",
-    "resolve_accessor",
 ]
+
+
+def __getattr__(name):
+    """Lazy import for models module to avoid NDIF serialization issues."""
+    if name in ("detect_model_type", "get_model_config", "resolve_accessor"):
+        from . import models
+        return getattr(models, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
