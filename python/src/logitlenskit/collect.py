@@ -9,7 +9,7 @@ between server and client is the primary bottleneck.
 import torch
 from typing import List, Dict, Optional, Union
 
-from .models import get_model_config, resolve_accessor, apply_module_or_callable
+from .models import get_model_config, resolve_accessor
 
 
 def collect_logit_lens(
@@ -53,9 +53,12 @@ def collect_logit_lens(
     # Get model configuration for this architecture
     config = get_model_config(model, model_type)
 
-    # Resolve model components
+    # Resolve model components BEFORE entering trace context
+    # This avoids serializing logitlenskit.models to the NDIF server
     layers_module = resolve_accessor(model, config["layers"])
     n_total_layers = resolve_accessor(model, config["n_layers"])
+    norm_module = resolve_accessor(model, config["norm"])
+    lm_head_module = resolve_accessor(model, config["lm_head"])
 
     # Tokenize once, client-side
     token_ids = model.tokenizer.encode(prompt)
@@ -68,40 +71,49 @@ def collect_logit_lens(
 
     # Run model, compute logit lens (computation happens server-side if remote=True)
     with model.trace(token_ids, remote=remote):
-        all_probs = []
-        all_topk = []
+        # Collect probabilities and top-k for each layer
+        all_probs = []  # List of [n_pos, vocab_size] tensors
+        all_topk = []   # List of [n_pos, k] tensors
 
         for li in layers:
             # Get hidden state from layer output
+            # .output[0] gives the hidden state tensor
             hidden = layers_module[li].output[0]
 
             # Project hidden state to vocabulary: hidden -> norm -> lm_head
-            normed = apply_module_or_callable(model, config["norm"], hidden)
-            logits = apply_module_or_callable(model, config["lm_head"], normed)
-            probs = torch.softmax(logits[0], dim=-1)
+            normed = norm_module(hidden)
+            logits = lm_head_module(normed)
+
+            # Handle batch dimension: local mode has [batch, n_pos, vocab],
+            # remote mode has [n_pos, vocab]. Squeeze batch if present.
+            if logits.dim() == 3:
+                logits = logits.squeeze(0)  # Remove batch dim
+            probs = torch.softmax(logits, dim=-1)  # [n_pos, vocab_size]
             all_probs.append(probs)
-            all_topk.append(probs.topk(k, dim=-1).indices)
+            all_topk.append(probs.topk(k, dim=-1).indices.to(torch.int32))  # [n_pos, k]
 
-        # Stack top-k indices: [n_layers, n_pos, k]
-        topk = torch.stack(all_topk).to(torch.int32)
+        # Save individual layer results - stacking happens client-side
+        result = {"all_topk": all_topk, "all_probs": all_probs}.save()
 
-        # For each position: find unique tokens across all layers, extract trajectories
-        tracked = []
-        probs_out = []
-        for pos in range(n_pos):
-            # Union of all tokens appearing in top-k at any layer for this position
-            unique = torch.unique(topk[:, pos, :].flatten()).to(torch.int32)
-            # Extract probability trajectory for each unique token
-            traj = torch.stack([all_probs[li][pos, unique] for li in range(n_layers)])
-            tracked.append(unique)
-            probs_out.append(traj)
+    # Client-side: stack and compute tracked tokens
+    topk = torch.stack(result["all_topk"], dim=0)  # [n_layers, n_pos, k]
+    all_probs = result["all_probs"]  # List of [n_pos, vocab_size]
 
-        # Save results to transmit from server
-        result = {"topk": topk, "tracked": tracked, "probs": probs_out}.save()
+    # For each position: find unique tokens across all layers, extract trajectories
+    tracked = []
+    probs_out = []
+    for pos in range(n_pos):
+        # Union of all tokens appearing in top-k at any layer for this position
+        pos_topk = topk[:, pos, :].flatten()
+        unique = torch.unique(pos_topk).to(torch.int32)
+        # Extract probability trajectory for each unique token
+        traj = torch.stack([all_probs[li][pos, unique] for li in range(n_layers)], dim=0)
+        tracked.append(unique)
+        probs_out.append(traj)
 
     # Build vocabulary map (client-side, only for tracked tokens)
-    all_ids = set(result["topk"].flatten().tolist())
-    for t in result["tracked"]:
+    all_ids = set(topk.flatten().tolist())
+    for t in tracked:
         all_ids.update(t.tolist())
     vocab = {i: model.tokenizer.decode([i]) for i in all_ids}
 
@@ -113,8 +125,8 @@ def collect_logit_lens(
         "model": model_name,
         "input": [model.tokenizer.decode([t]) for t in token_ids],
         "layers": layers,
-        "topk": result["topk"],
-        "tracked": result["tracked"],
-        "probs": result["probs"],
+        "topk": topk,
+        "tracked": tracked,
+        "probs": probs_out,
         "vocab": vocab,
     }
