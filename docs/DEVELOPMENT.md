@@ -363,60 +363,97 @@ npx playwright test --ui
 
 ## Google Colab Testing
 
-### Automated Testing via GitHub Actions
+Colab tests verify that notebooks work correctly on Google Colab with NDIF.
 
-The Colab smoke test runs on manual trigger:
-
-1. Add `NDIF_API_KEY` as a repository secret:
-   - Go to Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   - Name: `NDIF_API_KEY`, Value: your key from nnsight.net
-
-2. Trigger the workflow:
-   - Go to Actions → "Tests" workflow
-   - Click "Run workflow"
-   - Select the branch to test
-
-3. View results in the workflow run artifacts.
-
-### Manual Colab Testing
-
-For testing Colab-specific behavior that automated tests might miss:
-
-1. **Open the smoke test notebook:**
-   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/smoke_test.ipynb)
-
-2. **Add your NDIF API key:**
-   - Click the key icon in Colab's left sidebar
-   - Add a secret named `NDIF_API`
-   - Paste your key from [nnsight.net](https://nnsight.net)
-
-3. **Run all cells** (Runtime → Run all)
-
-4. **Verify:**
-   - All cells execute without errors
-   - "ALL TESTS PASSED!" appears in output
-   - Widget renders correctly with interactive features
-   - Dark mode option works
-
-### Local Playwright Colab Test
-
-Run the Colab test locally (requires NDIF_API_KEY in environment):
+### Quick Start
 
 ```bash
 cd js
-NDIF_API_KEY=your_key npx playwright test colab-smoke-test.spec.js
+
+# One-time setup (opens browser for Google login)
+npm run test:colab:setup
+
+# Then add NDIF_API to Colab secrets (see instructions below)
+
+# Run Colab tests
+npm run test:colab
 ```
 
-### Notebook Execution Tests
+### Setup (One-Time)
 
-Test notebooks locally without Colab:
+**Step 1: Google Authentication**
+
+Run the setup script - it opens a browser where you sign in to Google:
+
+```bash
+npm run test:colab:setup
+# Or: npx playwright test colab-auth-setup.js --headed
+```
+
+Sign in to Google when prompted. The script saves your auth state to `.auth/google-state.json` (this file is gitignored and expires after ~30 days).
+
+**Step 2: Add NDIF_API to Colab Secrets**
+
+1. Go to [colab.research.google.com](https://colab.research.google.com)
+2. Click the **key icon** 🔑 in the left sidebar
+3. Click **"Add a secret"**
+4. Set:
+   - Name: `NDIF_API`
+   - Value: Your API key from [nnsight.net](https://nnsight.net)
+5. Toggle **"Notebook access"** ON
+
+The notebook will read this key automatically - no environment variables needed!
+
+### Running Colab Tests
+
+```bash
+cd js
+
+# Run authenticated Colab tests
+npm run test:colab
+
+# Or run directly
+npx playwright test colab-authenticated.spec.js
+
+# Run unauthenticated tests (just verifies notebook loads)
+npx playwright test colab-smoke-test.spec.js
+```
+
+### What Gets Tested
+
+| Test Type | Auth Required | What It Tests |
+|-----------|---------------|---------------|
+| `colab-smoke-test.spec.js` | No | Notebook loads from GitHub, cell structure |
+| `colab-authenticated.spec.js` | Yes | Full execution, NDIF calls, widget rendering |
+
+### Troubleshooting
+
+**"Auth state not found"** - Run `npm run test:colab:setup` first
+
+**Auth expired** - Re-run the setup script (sessions expire after ~30 days)
+
+**NDIF errors** - Check your Colab secret is named `NDIF_API` and has notebook access enabled
+
+### Manual Colab Testing
+
+For quick manual verification:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/smoke_test.ipynb)
+
+1. Click the badge above
+2. Ensure NDIF_API secret is configured
+3. Run all cells (Runtime → Run all)
+4. Verify "ALL TESTS PASSED!" appears
+
+### Local Notebook Tests (Without Colab)
+
+Test notebooks locally using pytest + nbconvert:
 
 ```bash
 cd python
 source .venv/bin/activate
 
-# Run notebook tests (requires NDIF_API_KEY)
+# Run notebook tests (requires NDIF_API_KEY env var)
 NDIF_API_KEY=your_key pytest tests/integration/test_notebook.py -v
 
 # Skip slow tests
