@@ -16,6 +16,7 @@ from logitlenskit.display import (
     to_js_format,
     _is_python_format,
     _is_js_format,
+    _to_camel_case,
     HTML,
 )
 
@@ -251,3 +252,105 @@ class TestDisplayLogitLens:
         with patch('logitlenskit.display.display') as mock_display:
             display_logit_lens(sample_python_data, title="Test")
             mock_display.assert_called_once()
+
+    def test_passes_ui_options(self, sample_python_data):
+        """display_logit_lens should pass ui_options to show_logit_lens."""
+        with patch('logitlenskit.display.display') as mock_display:
+            display_logit_lens(sample_python_data, dark_mode=True)
+            mock_display.assert_called_once()
+            # The HTML should contain darkMode
+            html = mock_display.call_args[0][0].data
+            assert '"darkMode": true' in html or '"darkMode":true' in html
+
+
+class TestCamelCaseConversion:
+    """Tests for snake_case to camelCase conversion."""
+
+    def test_single_word(self):
+        """Single word should remain unchanged."""
+        assert _to_camel_case("title") == "title"
+
+    def test_two_words(self):
+        """Two words should convert properly."""
+        assert _to_camel_case("dark_mode") == "darkMode"
+
+    def test_three_words(self):
+        """Three words should convert properly."""
+        assert _to_camel_case("max_table_width") == "maxTableWidth"
+
+    def test_already_camel_case(self):
+        """Already camelCase should pass through."""
+        assert _to_camel_case("darkMode") == "darkMode"
+
+
+class TestUIOptions:
+    """Tests for **ui_options functionality."""
+
+    def test_dark_mode_option(self, sample_python_data):
+        """dark_mode should be converted to darkMode in uiState."""
+        html = show_logit_lens(sample_python_data, dark_mode=True).data
+        # Extract uiState JSON
+        assert '"darkMode": true' in html or '"darkMode":true' in html
+
+    def test_dark_mode_false(self, sample_python_data):
+        """dark_mode=False should be included."""
+        html = show_logit_lens(sample_python_data, dark_mode=False).data
+        assert '"darkMode": false' in html or '"darkMode":false' in html
+
+    def test_chart_height_option(self, sample_python_data):
+        """chart_height should be converted to chartHeight."""
+        html = show_logit_lens(sample_python_data, chart_height=200).data
+        assert '"chartHeight": 200' in html or '"chartHeight":200' in html
+
+    def test_max_rows_option(self, sample_python_data):
+        """max_rows should be converted to maxRows."""
+        html = show_logit_lens(sample_python_data, max_rows=10).data
+        assert '"maxRows": 10' in html or '"maxRows":10' in html
+
+    def test_pinned_rows_empty(self, sample_python_data):
+        """pinned_rows=[] should disable auto-pinning."""
+        html = show_logit_lens(sample_python_data, pinned_rows=[]).data
+        assert '"pinnedRows": []' in html or '"pinnedRows":[]' in html
+
+    def test_pinned_rows_with_data(self, sample_python_data):
+        """pinned_rows with data should be passed through."""
+        html = show_logit_lens(
+            sample_python_data,
+            pinned_rows=[{"pos": 0, "line": "solid"}]
+        ).data
+        assert '"pinnedRows":' in html
+        assert '"pos": 0' in html or '"pos":0' in html
+
+    def test_color_modes_option(self, sample_python_data):
+        """color_modes list should be passed through."""
+        html = show_logit_lens(
+            sample_python_data,
+            color_modes=["top", "Paris"]
+        ).data
+        assert '"colorModes":' in html
+        assert '"top"' in html
+        assert '"Paris"' in html
+
+    def test_multiple_options(self, sample_python_data):
+        """Multiple options should all be included."""
+        html = show_logit_lens(
+            sample_python_data,
+            title="Test",
+            dark_mode=True,
+            chart_height=150,
+            max_rows=5
+        ).data
+        assert '"title": "Test"' in html or '"title":"Test"' in html
+        assert '"darkMode": true' in html or '"darkMode":true' in html
+        assert '"chartHeight": 150' in html or '"chartHeight":150' in html
+        assert '"maxRows": 5' in html or '"maxRows":5' in html
+
+    def test_title_and_ui_options_combined(self, sample_python_data):
+        """title parameter and ui_options should both work."""
+        html = show_logit_lens(
+            sample_python_data,
+            title="My Title",
+            dark_mode=True
+        ).data
+        assert '"title": "My Title"' in html or '"title":"My Title"' in html
+        assert '"darkMode": true' in html or '"darkMode":true' in html

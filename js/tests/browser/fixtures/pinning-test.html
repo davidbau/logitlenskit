@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pinning Behavior Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .widget-container { margin-bottom: 30px; border: 1px solid #ddd; padding: 10px; }
+        h3 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>Pinning Behavior Tests</h1>
+
+    <!-- Widget with default auto-pinning (last row pinned) -->
+    <div class="widget-container">
+        <h3>Default: Auto-pin last row</h3>
+        <div id="widget-default" style="background: white; padding: 20px;"></div>
+    </div>
+
+    <!-- Widget with pinned_rows=[] (no auto-pinning) -->
+    <div class="widget-container">
+        <h3>pinnedRows: [] (disabled)</h3>
+        <div id="widget-no-pinning" style="background: white; padding: 20px;"></div>
+    </div>
+
+    <!-- Widget with custom pinned row -->
+    <div class="widget-container">
+        <h3>Custom: Pin row 1</h3>
+        <div id="widget-custom-pin" style="background: white; padding: 20px;"></div>
+    </div>
+
+    <script src="sample-data.js"></script>
+    <script src="logit-lens-widget.min.js"></script>
+    <script>
+        // Default behavior: should auto-pin last row
+        LogitLensWidget("#widget-default", SAMPLE_DATA_1, {
+            title: "Default Auto-Pin"
+        });
+
+        // Disabled pinning: pinnedRows=[]
+        LogitLensWidget("#widget-no-pinning", SAMPLE_DATA_1, {
+            title: "No Pinning",
+            pinnedRows: []
+        });
+
+        // Custom pinning: pin row 1
+        LogitLensWidget("#widget-custom-pin", SAMPLE_DATA_1, {
+            title: "Custom Pin Row 1",
+            pinnedRows: [{ pos: 1, line: "solid" }]
+        });
+    </script>
+</body>
+</html>

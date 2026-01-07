@@ -70,10 +70,17 @@ def _is_python_format(data: Dict) -> bool:
     return "vocab" in data and "topk" in data and "probs" in data
 
 
+def _to_camel_case(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    parts = snake_str.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
 def show_logit_lens(
     data: Dict,
     title: Optional[str] = None,
     container_id: Optional[str] = None,
+    **ui_options,
 ) -> HTML:
     """
     Display interactive logit lens visualization in Jupyter.
@@ -86,6 +93,20 @@ def show_logit_lens(
               already converted to_js_format() (JavaScript V2 format)
         title: Optional title for the widget
         container_id: Optional container ID (auto-generated if not provided)
+        **ui_options: Additional UI options (snake_case converted to camelCase):
+            - dark_mode: bool - Force dark/light mode (None for auto)
+            - chart_height: int - Height of the chart area in pixels
+            - input_token_width: int - Width of input token column (default: 100)
+            - cell_width: int - Width of prediction cells (default: 44)
+            - max_rows: int - Maximum rows to display (None for all)
+            - max_table_width: int - Maximum table width in pixels
+            - plot_min_layer: int - Minimum layer shown in chart
+            - color_modes: list[str] - Color modes, e.g. ["top", "Paris"]
+            - heatmap_base_color: str - Base heatmap color (hex)
+            - heatmap_next_color: str - Next-token heatmap color (hex)
+            - pinned_rows: list - Pinned rows, e.g. [{"pos": 4, "line": "solid"}]
+                           Pass [] to disable auto-pinning of last row
+            - pinned_groups: list - Pinned token groups
 
     Returns:
         IPython HTML object that displays the widget
@@ -93,6 +114,7 @@ def show_logit_lens(
     Example:
         >>> data = collect_logit_lens("The capital of France is", model)
         >>> show_logit_lens(data, title="GPT-2 Analysis")
+        >>> show_logit_lens(data, dark_mode=True, pinned_rows=[])
     """
     import uuid
 
@@ -110,8 +132,8 @@ def show_logit_lens(
             "or to_js_format()."
         )
 
-    # Build UI state
-    ui_state = {}
+    # Build UI state from kwargs (convert snake_case to camelCase)
+    ui_state = {_to_camel_case(k): v for k, v in ui_options.items()}
     if title:
         ui_state["title"] = title
 
@@ -152,6 +174,7 @@ def show_logit_lens(
 def display_logit_lens(
     data: Dict,
     title: Optional[str] = None,
+    **ui_options,
 ) -> None:
     """
     Display interactive logit lens visualization in Jupyter (convenience function).
@@ -161,5 +184,6 @@ def display_logit_lens(
     Args:
         data: Data from collect_logit_lens() or to_js_format()
         title: Optional title for the widget
+        **ui_options: See show_logit_lens for available options
     """
-    display(show_logit_lens(data, title))
+    display(show_logit_lens(data, title, **ui_options))

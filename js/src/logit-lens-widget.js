@@ -373,11 +373,15 @@ var LogitLensWidget = (function() {
             };
 
             // Restore pinned rows from uiState, mapping lineStyle names back to objects
-            if (uiState && uiState.pinnedRows) {
+            if (uiState && uiState.pinnedRows !== undefined) {
+                // Explicit pinnedRows provided (even if empty) - use it
                 state.pinnedRows = uiState.pinnedRows.map(function(pr) {
-                    var style = lineStyles.find(function(ls) { return ls.name === pr.lineStyleName; }) || lineStyles[0];
+                    var style = lineStyles.find(function(ls) { return ls.name === pr.line; }) || lineStyles[0];
                     return { pos: pr.pos, lineStyle: style };
                 });
+            } else {
+                // No pinnedRows specified - auto-pin the last row by default
+                state.pinnedRows = [{ pos: nPositions - 1, lineStyle: lineStyles[0] }];
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -2555,7 +2559,7 @@ var LogitLensWidget = (function() {
                     pinnedGroups: JSON.parse(JSON.stringify(state.pinnedGroups)),
                     lastPinnedGroupIndex: state.lastPinnedGroupIndex,
                     pinnedRows: state.pinnedRows.map(function(pr) {
-                        return { pos: pr.pos, lineStyleName: pr.lineStyle.name };
+                        return { pos: pr.pos, line: pr.lineStyle.name };
                     }),
                     heatmapBaseColor: state.heatmapBaseColor,
                     heatmapNextColor: state.heatmapNextColor,
