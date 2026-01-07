@@ -31,3 +31,11 @@ Thumbs.db
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Playwright auth state
+js/.auth/
+
+# Playwright test artifacts
+js/test-results/
+js/playwright-report/
+python/test-results/
