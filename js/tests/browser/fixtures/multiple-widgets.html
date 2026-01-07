@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Multiple Widgets Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .widget-section { margin-bottom: 40px; border-bottom: 1px solid #ccc; padding-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Multiple Widgets Test</h1>
+    <p>This page tests that three widgets render independently with their own data.</p>
+
+    <!-- Widget 1 -->
+    <div class="widget-section">
+        <div id="logit-lens-widget1" style="background: white; padding: 20px; border-radius: 8px;"></div>
+    </div>
+
+    <!-- Widget 2 -->
+    <div class="widget-section">
+        <div id="logit-lens-widget2" style="background: white; padding: 20px; border-radius: 8px;"></div>
+    </div>
+
+    <!-- Widget 3 -->
+    <div class="widget-section">
+        <div id="logit-lens-widget3" style="background: white; padding: 20px; border-radius: 8px;"></div>
+    </div>
+
+    <script src="sample-data.js"></script>
+    <script src="logit-lens-widget.min.js"></script>
+    <script>
+    // Simulate how Python embeds widgets - each in its own IIFE with retry logic
+
+    // Widget 1
+    (function() {
+        var containerId = "logit-lens-widget1";
+        var data = SAMPLE_DATA_1;
+        var uiState = { title: "Widget 1: The capital of France is" };
+
+        function initWidget() {
+            var container = document.getElementById(containerId);
+            if (container) {
+                LogitLensWidget("#" + containerId, data, uiState);
+            } else {
+                setTimeout(initWidget, 10);
+            }
+        }
+        initWidget();
+    })();
+
+    // Widget 2
+    (function() {
+        var containerId = "logit-lens-widget2";
+        var data = SAMPLE_DATA_2;
+        var uiState = { title: "Widget 2: Hello world" };
+
+        function initWidget() {
+            var container = document.getElementById(containerId);
+            if (container) {
+                LogitLensWidget("#" + containerId, data, uiState);
+            } else {
+                setTimeout(initWidget, 10);
+            }
+        }
+        initWidget();
+    })();
+
+    // Widget 3
+    (function() {
+        var containerId = "logit-lens-widget3";
+        var data = SAMPLE_DATA_3;
+        var uiState = { title: "Widget 3: 1 + 1 =" };
+
+        function initWidget() {
+            var container = document.getElementById(containerId);
+            if (container) {
+                LogitLensWidget("#" + containerId, data, uiState);
+            } else {
+                setTimeout(initWidget, 10);
+            }
+        }
+        initWidget();
+    })();
+    </script>
+</body>
+</html>

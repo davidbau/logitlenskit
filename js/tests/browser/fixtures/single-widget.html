@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Single Widget Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Single Widget Test</h1>
+
+    <!-- Container for widget (simulates Python output) -->
+    <div id="logit-lens-test1" style="background: white; padding: 20px; border-radius: 8px;"></div>
+
+    <script src="sample-data.js"></script>
+    <script src="logit-lens-widget.min.js"></script>
+    <script>
+    (function() {
+        var containerId = "logit-lens-test1";
+        var data = SAMPLE_DATA_1;
+        var uiState = { title: "Test Widget: The capital of France is" };
+
+        function initWidget() {
+            var container = document.getElementById(containerId);
+            if (container) {
+                LogitLensWidget("#" + containerId, data, uiState);
+            } else {
+                setTimeout(initWidget, 10);
+            }
+        }
+        initWidget();
+    })();
+    </script>
+</body>
+</html>

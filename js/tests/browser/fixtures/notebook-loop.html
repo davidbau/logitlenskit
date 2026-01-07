@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Notebook Loop Simulation</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .cell-output { margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Notebook Loop Simulation</h1>
+    <p>This simulates what happens when display() is called in a loop in Jupyter.</p>
+
+    <!-- This simulates how Jupyter adds HTML outputs from a loop -->
+    <div id="notebook-output"></div>
+
+    <script src="sample-data.js"></script>
+    <script src="logit-lens-widget.min.js"></script>
+    <script>
+    // Simulate the loop: for prompt in prompts: display(show_logit_lens(...))
+    // In Jupyter, each display() call adds HTML to the output area
+
+    const prompts = [
+        { data: SAMPLE_DATA_1, title: "Prompt 1: The capital of France is" },
+        { data: SAMPLE_DATA_2, title: "Prompt 2: Hello world" },
+        { data: SAMPLE_DATA_3, title: "Prompt 3: 1 + 1 =" },
+    ];
+
+    const outputArea = document.getElementById('notebook-output');
+
+    // Simulate what Python's display() does - adds HTML to the output
+    // Note: insertAdjacentHTML doesn't execute inline scripts, so we must
+    // call LogitLensWidget directly (as Jupyter would via its kernel messaging)
+    prompts.forEach((prompt, index) => {
+        const containerId = `logit-lens-loop-${index}`;
+
+        // Create the container HTML
+        const html = `
+            <div class="cell-output">
+                <div id="${containerId}" style="background: white; padding: 20px; border-radius: 8px;"></div>
+            </div>
+        `;
+
+        // Add container to output area
+        outputArea.insertAdjacentHTML('beforeend', html);
+
+        // Initialize widget directly (simulates script execution in Jupyter)
+        (function() {
+            var cid = containerId;
+            var data = prompt.data;
+            var uiState = { title: prompt.title };
+
+            function initWidget() {
+                var container = document.getElementById(cid);
+                if (container) {
+                    LogitLensWidget("#" + cid, data, uiState);
+                } else {
+                    setTimeout(initWidget, 10);
+                }
+            }
+            initWidget();
+        })();
+    });
+    </script>
+</body>
+</html>

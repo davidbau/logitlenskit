@@ -10,16 +10,21 @@
     "test:integration": "jest tests/integration/ --runInBand",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
+    "test:browser": "npx playwright test",
+    "test:browser:headed": "npx playwright test --headed",
+    "test:browser:debug": "npx playwright test --debug",
     "build": "esbuild src/logit-lens-widget.js --minify --outfile=dist/logit-lens-widget.min.js",
     "lint": "eslint src/ tests/",
     "callgraph": "node build/build-callgraph.js",
     "dataflow": "node build/build-dataflow.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "esbuild": "^0.19.0",
     "eslint": "^8.50.0",
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
+    "jest-environment-jsdom": "^29.7.0",
+    "serve": "^14.2.5"
   },
   "license": "MIT",
   "dependencies": {

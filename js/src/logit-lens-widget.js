@@ -47,7 +47,17 @@
  */
 
 var LogitLensWidget = (function() {
-    var instanceCount = 0;
+    // Generate a random ID for each widget instance to ensure uniqueness
+    // even when the widget code is loaded multiple times (e.g., in Jupyter notebooks
+    // where each cell output has its own copy of the code)
+    function generateUid() {
+        // Use crypto.randomUUID if available, otherwise fall back to Math.random
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return "ll_" + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+        }
+        // Fallback: combine timestamp and random number
+        return "ll_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // DATA NORMALIZATION
@@ -108,7 +118,7 @@ var LogitLensWidget = (function() {
     }
 
     return function(containerArg, widgetData, uiState) {
-        var uid = "ll_interact_" + instanceCount++;
+        var uid = generateUid();
         var container;
         if (typeof containerArg === 'string') {
             container = document.querySelector(containerArg);
