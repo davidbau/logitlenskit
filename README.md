@@ -45,7 +45,12 @@ from logitlenskit import collect_logit_lens, show_logit_lens
 
 model = LanguageModel("meta-llama/Llama-3.1-8B", device_map="auto")
 data = collect_logit_lens("The capital of France is", model, k=5, remote=True)
+
+# Display widget (last row auto-pinned by default)
 show_logit_lens(data, title="Llama-8B: The capital of France is")
+
+# Customize with options
+show_logit_lens(data, title="Custom view", dark_mode=True, pinned_rows=[])
 ```
 
 ### JavaScript (Visualization)

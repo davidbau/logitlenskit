@@ -89,17 +89,34 @@ See [DATA_FORMAT.md](DATA_FORMAT.md) for complete specification.
 
 The uiState parameter allows you to restore a previously saved widget configuration or set initial display options. You can capture the current state with `widget.getState()` and pass it here to recreate an identical view. This is useful for saving user preferences, creating reproducible visualizations, or duplicating widgets.
 
+**Display options:**
+
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `title` | string | "Logit Lens: Top Predictions by Layer" | Widget title |
-| `cellWidth` | number | 44 | Column width in pixels |
-| `inputTokenWidth` | number | 100 | Input token column width |
-| `chartHeight` | number | 140 | SVG chart height (60-400) |
-| `maxRows` | number | null | Max visible rows (null = all) |
-| `maxTableWidth` | number | null | Max table width (null = fit) |
-| `colorMode` | string | "top" | "top", "none", or token string |
-| `pinnedGroups` | array | [] | Pinned token groups |
-| `pinnedRows` | array | [] | Pinned input positions |
+| `title` | string | "Logit Lens: Top Predictions by Layer" | Widget title displayed above the table |
+| `cellWidth` | number | 44 | Width of each prediction cell in pixels |
+| `inputTokenWidth` | number | 100 | Width of the input token column in pixels |
+| `chartHeight` | number | 140 | Height of the trajectory chart in pixels (60-400) |
+| `maxRows` | number | null | Maximum visible rows (`null` shows all) |
+| `maxTableWidth` | number | null | Maximum table width (`null` fits to content) |
+| `plotMinLayer` | number | 0 | First layer shown in the trajectory chart |
+| `darkMode` | boolean | null | Force dark (`true`) or light (`false`) mode; `null` auto-detects |
+
+**Pinning options:**
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `pinnedRows` | array | [last row] | Input positions to pin. **By default, the last row is auto-pinned** so users see a trajectory immediately. Pass `[]` to disable auto-pinning. Each entry: `{pos: number, line: "solid"|"dashed"|"dotted"}` |
+| `pinnedGroups` | array | [] | Token trajectory groups. Each entry: `{tokens: string[], color: string}` |
+
+**Color options:**
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `colorModes` | array | ["top", lastToken] | Color modes to cycle through. Values: `"top"`, `"none"`, or token strings |
+| `colorMode` | string | - | (Legacy) Single color mode. Use `colorModes` array instead |
+| `heatmapBaseColor` | string | null | Custom base heatmap color (hex like `"#8844ff"`) |
+| `heatmapNextColor` | string | null | Custom next-token heatmap color |
 
 ### Returns
 
@@ -227,10 +244,13 @@ Token pinning is the primary way to compare how different tokens' probabilities 
 ### Row Pinning
 
 Row pinning allows you to compare trajectories across different input positions. When you click an input token in the leftmost column, that row becomes pinned and its trajectory appears in the chart with a distinct line style (solid, dashed, or dotted). This lets you see how the model's predictions differ for different parts of the input.
-- Each pinned row uses different line style (solid, dashed, dotted)
-- Auto-pins highest probability token (>5%) at position
+
+**Auto-pinning:** By default, the widget automatically pins the last input row when it initializes. This ensures users immediately see a trajectory in the chart, making the interface more discoverable. To disable this behavior, pass `pinnedRows: []` in the uiState.
+
+- Each pinned row uses a different line style (solid, dashed, dotted)
+- When a row is pinned, its highest-probability token (>5%) at that position is auto-selected
 - Yellow background indicates pinned rows
-- Enables multi-position comparison
+- Multiple rows can be pinned for side-by-side comparison
 
 ### Color Modes
 
@@ -301,7 +321,32 @@ var widget = LogitLensWidget("#viz", data, {
     title: "GPT-2: The quick brown fox",
     cellWidth: 50,
     chartHeight: 200,
-    colorMode: "none"
+    colorModes: ["none"]
+});
+```
+
+### Disable Auto-Pinning
+
+By default, the widget auto-pins the last input row so users immediately see a trajectory. If you want users to start with a blank chart and discover pinning on their own, pass an empty `pinnedRows` array:
+
+```javascript
+var widget = LogitLensWidget("#viz", data, {
+    title: "Explore the data",
+    pinnedRows: []  // No rows pinned initially
+});
+```
+
+### Pre-Pin Specific Rows
+
+You can specify exactly which rows should be pinned when the widget loads. This is useful for highlighting specific input positions that are relevant to your analysis:
+
+```javascript
+var widget = LogitLensWidget("#viz", data, {
+    title: "Comparing subject vs. verb",
+    pinnedRows: [
+        { pos: 1, line: "solid" },    // "cat" - the subject
+        { pos: 3, line: "dashed" }    // "sat" - the verb
+    ]
 });
 ```
 

@@ -140,43 +140,96 @@ decoded = decode_tracked_tokens(data, model.tokenizer)
 
 ## Display
 
-These functions handle the conversion from tensor data to widget JSON format and render the interactive visualization. In most cases, you will use `show_logit_lens()` directly, but `format_data_for_widget()` is available when you need the JSON data for other purposes.
+These functions handle the conversion from tensor data to widget JSON format and render the interactive visualization. In most cases, you will use `show_logit_lens()` directly, but `to_js_format()` is available when you need the JSON data for other purposes such as saving to a file or embedding in custom HTML.
 
 ### `show_logit_lens`
 
 ```python
 def show_logit_lens(
     data: Dict,
-    tokenizer,
     title: Optional[str] = None,
     container_id: Optional[str] = None,
+    **ui_options,
 ) -> HTML
 ```
 
 This function converts the raw tensor data to JSON format and renders an interactive logit lens visualization in Jupyter. The output is self-contained HTML that includes all necessary JavaScript and CSS, so it works without any widget installation or external dependencies. The visualization supports clicking cells to see top-k predictions, pinning tokens to compare trajectories, and resizing columns to explore different layers.
 
+By default, the widget auto-pins the last input row so users immediately see a trajectory in the chart. This helps new users understand the interface without requiring them to discover the pinning feature first. You can disable this by passing `pinned_rows=[]`.
+
 #### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `data` | Dict | required | Data from collection with `track_across_layers=True` |
-| `tokenizer` | Tokenizer | required | Model tokenizer for decoding |
+| `data` | Dict | required | Data from `collect_logit_lens()` or `to_js_format()` |
 | `title` | str | None | Optional title for the widget |
-| `container_id` | str | None | Optional container ID (auto-generated) |
+| `container_id` | str | None | Optional container ID (auto-generated if omitted) |
+
+#### UI Options (`**ui_options`)
+
+All additional keyword arguments are passed to the JavaScript widget as UI configuration. Use snake_case in Python—it's automatically converted to camelCase for JavaScript.
+
+**Display options** control the visual appearance:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `dark_mode` | bool | None | Force dark (`True`) or light (`False`) mode. `None` auto-detects from browser. |
+| `chart_height` | int | 140 | Height of the trajectory chart in pixels (60-400). |
+| `input_token_width` | int | 100 | Width of the input token column in pixels. |
+| `cell_width` | int | 44 | Width of each prediction cell in pixels. |
+| `max_rows` | int | None | Maximum visible rows. `None` shows all rows. |
+| `max_table_width` | int | None | Maximum table width in pixels. `None` fits to content. |
+| `plot_min_layer` | int | 0 | First layer shown in the trajectory chart. |
+
+**Pinning options** control which rows and tokens are highlighted:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `pinned_rows` | list | auto | Pinned input positions. Default auto-pins the last row. Pass `[]` to start with nothing pinned. Each entry is `{"pos": int, "line": str}` where `line` is "solid", "dashed", or "dotted". |
+| `pinned_groups` | list | [] | Pinned token trajectory groups. Each entry is `{"tokens": [str], "color": str}`. |
+
+**Color options** control cell background coloring:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `color_modes` | list | ["top", last_token] | List of color modes to cycle through. Common values: `"top"` (color by top-1 probability), `"none"` (no coloring), or a token string (color by that token's probability). |
+| `heatmap_base_color` | str | None | Custom base color for heatmap (hex string like `"#8844ff"`). |
+| `heatmap_next_color` | str | None | Custom color for next-token heatmap. |
 
 #### Returns
 
-IPython HTML object that displays the interactive widget.
+IPython HTML object that displays the interactive widget when rendered in a Jupyter cell.
 
-#### Example
+#### Examples
 
 ```python
 from logitlenskit import collect_logit_lens, show_logit_lens
 
 data = collect_logit_lens("The capital of France is", model, remote=True)
 
-# Display widget
+# Basic usage - last row is auto-pinned
 show_logit_lens(data, title="France Capital")
+
+# Disable auto-pinning to start with a blank chart
+show_logit_lens(data, title="Explore yourself", pinned_rows=[])
+
+# Force dark mode with a taller chart
+show_logit_lens(data, title="Dark Mode", dark_mode=True, chart_height=200)
+
+# Pin specific rows for comparison
+show_logit_lens(data,
+    title="Comparing positions",
+    pinned_rows=[
+        {"pos": 3, "line": "solid"},   # "France"
+        {"pos": 4, "line": "dashed"},  # "is"
+    ]
+)
+
+# Limit visible rows for long prompts
+show_logit_lens(data, title="Long prompt", max_rows=10)
+
+# Color cells by a specific token's probability
+show_logit_lens(data, title="Paris tracking", color_modes=["Paris", "top"])
 ```
 
 ---
@@ -186,33 +239,57 @@ show_logit_lens(data, title="France Capital")
 ```python
 def display_logit_lens(
     data: Dict,
-    tokenizer,
     title: Optional[str] = None,
+    **ui_options,
 ) -> None
 ```
 
-This convenience function combines `show_logit_lens()` with IPython's `display()` call. Use it when you want to render the widget immediately without capturing the HTML object. It is equivalent to calling `display(show_logit_lens(data, tokenizer, title))`.
+This convenience function combines `show_logit_lens()` with IPython's `display()` call. Use it when you want to render the widget immediately without capturing the HTML object. It accepts all the same `**ui_options` as `show_logit_lens()`.
+
+```python
+# These are equivalent:
+display_logit_lens(data, title="My Widget", dark_mode=True)
+display(show_logit_lens(data, title="My Widget", dark_mode=True))
+```
 
 ---
 
-### `format_data_for_widget`
+### `to_js_format`
 
 ```python
-def format_data_for_widget(data: Dict, tokenizer) -> Dict
+def to_js_format(data: Dict) -> Dict
 ```
 
 This function converts the raw tensor data from `collect_logit_lens()` into the V2 JSON format that the JavaScript widget expects. Use it when you need the formatted data for purposes other than immediate display—for example, saving to a file, sending to a web server, or embedding in a custom HTML page.
+
+The conversion extracts token strings from the vocab mapping and restructures the probability data into the compact format described in [DATA_FORMAT.md](DATA_FORMAT.md). The resulting dict can be serialized to JSON and loaded directly by the JavaScript widget.
 
 #### Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `data` | Dict | Raw data from collection function |
-| `tokenizer` | Tokenizer | Model tokenizer |
+| `data` | Dict | Raw data from `collect_logit_lens()` |
 
 #### Returns
 
-Dict in widget-compatible format (see [DATA_FORMAT.md](DATA_FORMAT.md)).
+Dict in widget-compatible V2 format with keys: `meta`, `input`, `layers`, `topk`, `tracked`.
+
+#### Example
+
+```python
+from logitlenskit import collect_logit_lens, to_js_format
+import json
+
+data = collect_logit_lens("Hello world", model, remote=True)
+js_data = to_js_format(data)
+
+# Save to file for later use
+with open("analysis.json", "w") as f:
+    json.dump(js_data, f)
+
+# Or embed in HTML
+html = f'<script>var data = {json.dumps(js_data)};</script>'
+```
 
 ---
 
