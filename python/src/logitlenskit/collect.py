@@ -7,9 +7,130 @@ between server and client is the primary bottleneck.
 """
 
 import torch
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Any
 
-from .models import get_model_config, resolve_accessor
+
+# =============================================================================
+# Model Configuration (inlined to avoid serialization issues with NDIF)
+# =============================================================================
+# When running remotely, nnsight serializes the trace context. Any cross-module
+# imports can cause "Module not whitelisted" errors. We inline configs here.
+
+_MODEL_CONFIGS: Dict[str, Dict[str, str]] = {
+    "llama": {
+        "layers": "model.layers",
+        "norm": "model.norm",
+        "lm_head": "lm_head",
+        "n_layers": "config.num_hidden_layers",
+    },
+    "mistral": {
+        "layers": "model.layers",
+        "norm": "model.norm",
+        "lm_head": "lm_head",
+        "n_layers": "config.num_hidden_layers",
+    },
+    "qwen2": {
+        "layers": "model.layers",
+        "norm": "model.norm",
+        "lm_head": "lm_head",
+        "n_layers": "config.num_hidden_layers",
+    },
+    "gpt2": {
+        "layers": "transformer.h",
+        "norm": "transformer.ln_f",
+        "lm_head": "lm_head",
+        "n_layers": "config.n_layer",
+    },
+    "gptj": {
+        "layers": "transformer.h",
+        "norm": "transformer.ln_f",
+        "lm_head": "lm_head",
+        "n_layers": "config.n_layer",
+    },
+    "gpt_neox": {
+        "layers": "gpt_neox.layers",
+        "norm": "gpt_neox.final_layer_norm",
+        "lm_head": "embed_out",
+        "n_layers": "config.num_hidden_layers",
+    },
+    "olmo": {
+        "layers": "model.transformer.blocks",
+        "norm": "model.transformer.ln_f",
+        "lm_head": "model.transformer.ff_out",
+        "n_layers": "config.n_layers",
+    },
+    "phi": {
+        "layers": "model.layers",
+        "norm": "model.final_layernorm",
+        "lm_head": "lm_head",
+        "n_layers": "config.num_hidden_layers",
+    },
+    "gemma": {
+        "layers": "model.layers",
+        "norm": "model.norm",
+        "lm_head": "lm_head",
+        "n_layers": "config.num_hidden_layers",
+    },
+}
+
+_MODEL_ALIASES: Dict[str, str] = {
+    "llama2": "llama",
+    "llama3": "llama",
+    "codellama": "llama",
+    "pythia": "gpt_neox",
+    "gpt-j": "gptj",
+    "gpt-neox": "gpt_neox",
+    "qwen": "qwen2",
+    "gemma2": "gemma",
+    "phi3": "phi",
+    "phi-3": "phi",
+}
+
+
+def _resolve_accessor(model, accessor: str) -> Any:
+    """Resolve a dot-separated path to get a module or value."""
+    obj = model
+    for attr in accessor.split("."):
+        obj = getattr(obj, attr)
+    return obj
+
+
+def _detect_model_type(model) -> str:
+    """Auto-detect model type from config."""
+    model_type = getattr(model.config, "model_type", "").lower()
+
+    if model_type in _MODEL_CONFIGS:
+        return model_type
+    if model_type in _MODEL_ALIASES:
+        return _MODEL_ALIASES[model_type]
+
+    # Try architectures field
+    archs = getattr(model.config, "architectures", [])
+    for arch in archs:
+        arch_lower = arch.lower()
+        for key in _MODEL_CONFIGS:
+            if key in arch_lower:
+                return key
+
+    raise ValueError(
+        f"Unknown model type: {model_type}. "
+        f"Supported: {list(_MODEL_CONFIGS.keys())}"
+    )
+
+
+def _get_model_config(model, model_type: Optional[str] = None) -> Dict[str, str]:
+    """Get model configuration, auto-detecting if not specified."""
+    if model_type is None:
+        model_type = _detect_model_type(model)
+
+    model_type = model_type.lower()
+    if model_type in _MODEL_ALIASES:
+        model_type = _MODEL_ALIASES[model_type]
+
+    if model_type not in _MODEL_CONFIGS:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+    return _MODEL_CONFIGS[model_type]
 
 
 def collect_logit_lens(
@@ -51,14 +172,14 @@ def collect_logit_lens(
         >>> print(data["input"])  # ['The', ' capital', ' of', ' France', ' is']
     """
     # Get model configuration for this architecture
-    config = get_model_config(model, model_type)
+    config = _get_model_config(model, model_type)
 
     # Resolve model components BEFORE entering trace context
-    # This avoids serializing logitlenskit.models to the NDIF server
-    layers_module = resolve_accessor(model, config["layers"])
-    n_total_layers = resolve_accessor(model, config["n_layers"])
-    norm_module = resolve_accessor(model, config["norm"])
-    lm_head_module = resolve_accessor(model, config["lm_head"])
+    # This avoids serialization issues with NDIF remote execution
+    layers_module = _resolve_accessor(model, config["layers"])
+    n_total_layers = _resolve_accessor(model, config["n_layers"])
+    norm_module = _resolve_accessor(model, config["norm"])
+    lm_head_module = _resolve_accessor(model, config["lm_head"])
 
     # Tokenize once, client-side
     token_ids = model.tokenizer.encode(prompt)
