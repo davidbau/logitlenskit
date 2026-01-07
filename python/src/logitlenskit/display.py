@@ -128,9 +128,20 @@ def show_logit_lens(
             {_WIDGET_JS}
         }}
 
+        var containerId = "{container_id}";
         var data = {json.dumps(widget_data)};
         var uiState = {json.dumps(ui_state)};
-        LogitLensWidget("#{container_id}", data, uiState);
+
+        // Wait for container to exist in DOM (handles async rendering)
+        function initWidget() {{
+            var container = document.getElementById(containerId);
+            if (container) {{
+                LogitLensWidget("#" + containerId, data, uiState);
+            }} else {{
+                setTimeout(initWidget, 10);
+            }}
+        }}
+        initWidget();
     }})();
     </script>
     """
