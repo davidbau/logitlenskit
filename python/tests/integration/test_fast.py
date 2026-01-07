@@ -27,52 +27,37 @@ class TestLocalGPT2:
 
     def test_collect_basic(self, gpt2_model):
         """Basic collection should work."""
-        from logitlenskit import collect_logit_lens_topk_efficient
+        from logitlenskit import collect_logit_lens
 
-        data = collect_logit_lens_topk_efficient(
+        data = collect_logit_lens(
             "Hello world",
             gpt2_model,
-            top_k=3,
-            track_across_layers=False,
+            k=3,
             remote=False,
         )
 
-        assert "tokens" in data
+        assert "input" in data
         assert "layers" in data
-        assert "top_indices" in data
-        assert "top_probs" in data
-        assert len(data["tokens"]) == 2  # "Hello" and " world"
-
-    def test_collect_with_tracking(self, gpt2_model):
-        """Collection with trajectory tracking should work."""
-        from logitlenskit import collect_logit_lens_topk_efficient
-
-        data = collect_logit_lens_topk_efficient(
-            "The quick brown fox",
-            gpt2_model,
-            top_k=5,
-            track_across_layers=True,
-            remote=False,
-        )
-
-        assert "tracked_indices" in data
-        assert "tracked_probs" in data
-        assert len(data["tracked_indices"]) == len(data["tokens"])
+        assert "topk" in data
+        assert "tracked" in data
+        assert "probs" in data
+        assert "vocab" in data
+        assert len(data["input"]) == 2  # "Hello" and " world"
 
     def test_layer_subset(self, gpt2_model):
         """Should work with layer subset."""
-        from logitlenskit import collect_logit_lens_topk_efficient
+        from logitlenskit import collect_logit_lens
 
-        data = collect_logit_lens_topk_efficient(
+        data = collect_logit_lens(
             "Test",
             gpt2_model,
-            top_k=3,
+            k=3,
             layers=[0, 3, 6, 9, 11],  # GPT-2 has 12 layers
             remote=False,
         )
 
         assert data["layers"] == [0, 3, 6, 9, 11]
-        assert data["top_indices"].shape[0] == 5  # 5 layers
+        assert data["topk"].shape[0] == 5  # 5 layers
 
     def test_model_type_detection(self, gpt2_model):
         """Should auto-detect GPT-2 model type."""
@@ -80,6 +65,22 @@ class TestLocalGPT2:
 
         model_type = detect_model_type(gpt2_model)
         assert model_type == "gpt2"
+
+    def test_vocab_contains_tracked_tokens(self, gpt2_model):
+        """Vocab should contain all tracked token strings."""
+        from logitlenskit import collect_logit_lens
+
+        data = collect_logit_lens(
+            "The capital of France is",
+            gpt2_model,
+            k=5,
+            remote=False,
+        )
+
+        # All tracked indices should be in vocab
+        for tracked_indices in data["tracked"]:
+            for idx in tracked_indices.tolist():
+                assert idx in data["vocab"]
 
 
 class TestNDIFGPTJ:
@@ -101,17 +102,17 @@ class TestNDIFGPTJ:
 
     def test_collect_remote(self, gptj_model):
         """Basic remote collection should work."""
-        from logitlenskit import collect_logit_lens_topk_efficient
+        from logitlenskit import collect_logit_lens
 
-        data = collect_logit_lens_topk_efficient(
+        data = collect_logit_lens(
             "The capital of France is",
             gptj_model,
-            top_k=5,
-            track_across_layers=True,
+            k=5,
             remote=True,
         )
 
-        assert "tokens" in data
-        assert "tracked_probs" in data
+        assert "input" in data
+        assert "probs" in data
+        assert "vocab" in data
         # GPT-J should predict "Paris" highly at the final layer
-        assert len(data["tokens"]) > 0
+        assert len(data["input"]) > 0

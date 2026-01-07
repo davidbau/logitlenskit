@@ -1,5 +1,5 @@
 """
-Logit lens data collection using nnterp for standardized model access.
+Logit lens data collection using nnsight for model access.
 
 This module provides functions to collect logit lens data from transformer
 language models, optimized for remote execution via NDIF where bandwidth
@@ -9,12 +9,15 @@ between server and client is the primary bottleneck.
 import torch
 from typing import List, Dict, Optional, Union
 
+from .models import get_model_config, resolve_accessor, apply_module_or_callable
+
 
 def collect_logit_lens(
     prompt: str,
     model,
     k: int = 5,
     layers: Optional[List[int]] = None,
+    model_type: Optional[str] = None,
     remote: bool = True,
 ) -> Dict:
     """
@@ -25,9 +28,10 @@ def collect_logit_lens(
 
     Args:
         prompt: Input text to analyze
-        model: nnterp StandardizedTransformer or nnsight LanguageModel
+        model: nnsight LanguageModel
         k: Number of top predictions to track per layer/position (default: 5)
         layers: Specific layer indices to analyze (default: all layers)
+        model_type: Model architecture type (auto-detected if not provided)
         remote: Use NDIF remote execution (default: True)
 
     Returns:
@@ -41,18 +45,25 @@ def collect_logit_lens(
             vocab: Dict mapping token indices to strings
 
     Example:
-        >>> from nnterp import StandardizedTransformer
-        >>> model = StandardizedTransformer("openai-community/gpt2")
+        >>> from nnsight import LanguageModel
+        >>> model = LanguageModel("openai-community/gpt2", device_map="auto")
         >>> data = collect_logit_lens("The capital of France is", model)
         >>> print(data["input"])  # ['The', ' capital', ' of', ' France', ' is']
     """
+    # Get model configuration for this architecture
+    config = get_model_config(model, model_type)
+
+    # Resolve model components
+    layers_module = resolve_accessor(model, config["layers"])
+    n_total_layers = resolve_accessor(model, config["n_layers"])
+
     # Tokenize once, client-side
     token_ids = model.tokenizer.encode(prompt)
     n_pos = len(token_ids)
 
     # Default: all layers
     if layers is None:
-        layers = list(range(model.num_layers))
+        layers = list(range(n_total_layers))
     n_layers = len(layers)
 
     # Run model, compute logit lens (computation happens server-side if remote=True)
@@ -61,8 +72,12 @@ def collect_logit_lens(
         all_topk = []
 
         for li in layers:
+            # Get hidden state from layer output
+            hidden = layers_module[li].output[0]
+
             # Project hidden state to vocabulary: hidden -> norm -> lm_head
-            logits = model.lm_head(model.ln_final(model.layers_output[li]))
+            normed = apply_module_or_callable(model, config["norm"], hidden)
+            logits = apply_module_or_callable(model, config["lm_head"], normed)
             probs = torch.softmax(logits[0], dim=-1)
             all_probs.append(probs)
             all_topk.append(probs.topk(k, dim=-1).indices)

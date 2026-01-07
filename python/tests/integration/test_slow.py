@@ -48,42 +48,40 @@ class TestNDIFModels:
         assert detected == expected_type
 
     @pytest.mark.parametrize("model_name,expected_type", NDIF_MODELS)
-    def test_collect_efficient(self, ndif_setup, model_name, expected_type):
-        """Efficient collection should work for each model."""
+    def test_collect(self, ndif_setup, model_name, expected_type):
+        """Collection should work for each model."""
         from nnsight import LanguageModel
-        from logitlenskit import collect_logit_lens_topk_efficient
+        from logitlenskit import collect_logit_lens
 
         model = LanguageModel(model_name, device_map="auto", token=ndif_setup)
 
-        data = collect_logit_lens_topk_efficient(
+        data = collect_logit_lens(
             "The quick brown fox",
             model,
-            top_k=5,
-            track_across_layers=True,
+            k=5,
             remote=True,
         )
 
         # Basic structure checks
-        assert "tokens" in data
+        assert "input" in data
         assert "layers" in data
-        assert "top_indices" in data
-        assert "top_probs" in data
-        assert "tracked_indices" in data
-        assert "tracked_probs" in data
+        assert "topk" in data
+        assert "tracked" in data
+        assert "probs" in data
+        assert "vocab" in data
 
         # Shape checks
         n_layers = len(data["layers"])
-        n_tokens = len(data["tokens"])
-        assert data["top_indices"].shape == (n_layers, n_tokens, 5)
-        assert data["top_probs"].shape == (n_layers, n_tokens, 5)
-        assert len(data["tracked_indices"]) == n_tokens
-        assert len(data["tracked_probs"]) == n_tokens
+        n_tokens = len(data["input"])
+        assert data["topk"].shape == (n_layers, n_tokens, 5)
+        assert len(data["tracked"]) == n_tokens
+        assert len(data["probs"]) == n_tokens
 
     @pytest.mark.parametrize("model_name,expected_type", NDIF_MODELS)
     def test_layer_subset(self, ndif_setup, model_name, expected_type):
         """Layer subset should work for each model."""
         from nnsight import LanguageModel
-        from logitlenskit import collect_logit_lens_topk_efficient, get_model_config, resolve_accessor
+        from logitlenskit import collect_logit_lens, get_model_config, resolve_accessor
 
         model = LanguageModel(model_name, device_map="auto", token=ndif_setup)
         cfg = get_model_config(model)
@@ -92,13 +90,13 @@ class TestNDIFModels:
         # Use every 4th layer
         layers = list(range(0, total_layers, 4))
 
-        data = collect_logit_lens_topk_efficient(
+        data = collect_logit_lens(
             "Test",
             model,
-            top_k=3,
+            k=3,
             layers=layers,
             remote=True,
         )
 
         assert data["layers"] == layers
-        assert data["top_indices"].shape[0] == len(layers)
+        assert data["topk"].shape[0] == len(layers)
