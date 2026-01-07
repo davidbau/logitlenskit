@@ -10,7 +10,7 @@
     "test:integration": "jest tests/integration/ --runInBand",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
-    "build": "esbuild src/logit-lens-widget.js --bundle --minify --outfile=dist/logit-lens-widget.min.js --global-name=LogitLensWidgetExport",
+    "build": "esbuild src/logit-lens-widget.js --minify --outfile=dist/logit-lens-widget.min.js",
     "lint": "eslint src/ tests/",
     "callgraph": "node build/build-callgraph.js",
     "dataflow": "node build/build-dataflow.js"

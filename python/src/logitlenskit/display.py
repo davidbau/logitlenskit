@@ -5,12 +5,14 @@ Provides zero-install HTML output - no ipywidgets required.
 """
 
 import json
+from pathlib import Path
 from typing import Dict, Optional, Union
 from IPython.display import HTML, display
 
 
-# The LogitLensWidget JavaScript code will be embedded here
-_WIDGET_JS_URL = "https://davidbau.github.io/logitlenskit/js/dist/logit-lens-widget.min.js"
+# Load widget JS at import time (bundled with package)
+_WIDGET_JS_PATH = Path(__file__).parent / "static" / "logit-lens-widget.min.js"
+_WIDGET_JS = _WIDGET_JS_PATH.read_text() if _WIDGET_JS_PATH.exists() else None
 
 
 def to_js_format(data: Dict) -> Dict:
@@ -114,25 +116,21 @@ def show_logit_lens(
         ui_state["title"] = title
 
     # Generate HTML with embedded widget
+    if _WIDGET_JS is None:
+        return HTML(f'<div style="color: red;">Error: Widget JS not found at {_WIDGET_JS_PATH}</div>')
+
     html = f"""
     <div id="{container_id}" style="background: white; padding: 20px; border-radius: 8px;"></div>
     <script>
     (function() {{
+        // Embed widget code if not already loaded
+        if (typeof LogitLensWidget === 'undefined') {{
+            {_WIDGET_JS}
+        }}
+
         var data = {json.dumps(widget_data)};
         var uiState = {json.dumps(ui_state)};
-
-        // Check if LogitLensWidget is already loaded
-        if (typeof LogitLensWidget !== 'undefined') {{
-            LogitLensWidget("#{container_id}", data, uiState);
-        }} else {{
-            // Load widget script
-            var script = document.createElement('script');
-            script.src = "{_WIDGET_JS_URL}";
-            script.onload = function() {{
-                LogitLensWidget("#{container_id}", data, uiState);
-            }};
-            document.head.appendChild(script);
-        }}
+        LogitLensWidget("#{container_id}", data, uiState);
     }})();
     </script>
     """
