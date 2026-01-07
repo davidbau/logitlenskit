@@ -2,11 +2,14 @@
 
 Interactive visualization toolkit for transformer logit lens analysis.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/tutorial.ipynb)
+
 ## Where to Start
 
-*   **Using the code**: Check out the [Quick Start](#quick-start) below and the [Python API Reference](docs/PYTHON_API.md).
-*   **Developing**: See [PLAN.md](PLAN.md) for the implementation roadmap and project structure. The core logic is in `python/` and the visualization widget is in `js/`.
-*   **Documentation**: Full documentation is located in the [`docs/`](docs/) directory.
+*   **Try it now**: Open the [tutorial notebook in Colab](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/tutorial.ipynb) to run Llama-8B on NDIF
+*   **Using the code**: Check out the [Quick Start](#quick-start) below and the [Python API Reference](docs/PYTHON_API.md)
+*   **Developing**: See [PLAN.md](PLAN.md) for the implementation roadmap and project structure
+*   **Documentation**: Full documentation is in the [`docs/`](docs/) directory
 
 ## Background: What is the Logit Lens?
 
@@ -38,16 +41,11 @@ This library is designed to make logit lens analysis efficient and accessible, p
 
 ```python
 from nnsight import LanguageModel
-from logitlenskit import collect_logit_lens_topk_efficient
+from logitlenskit import collect_logit_lens, show_logit_lens
 
-model = LanguageModel("meta-llama/Llama-3.1-70B", device_map="auto")
-data = collect_logit_lens_topk_efficient(
-    "The capital of France is",
-    model,
-    top_k=5,
-    track_across_layers=True,
-    remote=True
-)
+model = LanguageModel("meta-llama/Llama-3.1-8B", device_map="auto")
+data = collect_logit_lens("The capital of France is", model, k=5, remote=True)
+show_logit_lens(data, title="Llama-8B: The capital of France is")
 ```
 
 ### JavaScript (Visualization)
