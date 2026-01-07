@@ -341,6 +341,112 @@ echo $NDIF_API
 python -c "from nnsight import CONFIG; print(CONFIG.API_KEY)"
 ```
 
+## Browser Tests (Playwright)
+
+Browser tests verify widget rendering and interaction in a real browser:
+
+```bash
+cd js
+
+# Install Playwright browsers (first time)
+npx playwright install chromium
+
+# Run all browser tests (excluding Colab)
+npx playwright test --ignore-pattern="**/colab-*.spec.js"
+
+# Run specific test file
+npx playwright test widget-rendering.spec.js
+
+# Run with UI mode (interactive debugging)
+npx playwright test --ui
+```
+
+## Google Colab Testing
+
+### Automated Testing via GitHub Actions
+
+The Colab smoke test runs on manual trigger:
+
+1. Add `NDIF_API_KEY` as a repository secret:
+   - Go to Settings → Secrets and variables → Actions
+   - Click "New repository secret"
+   - Name: `NDIF_API_KEY`, Value: your key from nnsight.net
+
+2. Trigger the workflow:
+   - Go to Actions → "Tests" workflow
+   - Click "Run workflow"
+   - Select the branch to test
+
+3. View results in the workflow run artifacts.
+
+### Manual Colab Testing
+
+For testing Colab-specific behavior that automated tests might miss:
+
+1. **Open the smoke test notebook:**
+   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/smoke_test.ipynb)
+
+2. **Add your NDIF API key:**
+   - Click the key icon in Colab's left sidebar
+   - Add a secret named `NDIF_API`
+   - Paste your key from [nnsight.net](https://nnsight.net)
+
+3. **Run all cells** (Runtime → Run all)
+
+4. **Verify:**
+   - All cells execute without errors
+   - "ALL TESTS PASSED!" appears in output
+   - Widget renders correctly with interactive features
+   - Dark mode option works
+
+### Local Playwright Colab Test
+
+Run the Colab test locally (requires NDIF_API_KEY in environment):
+
+```bash
+cd js
+NDIF_API_KEY=your_key npx playwright test colab-smoke-test.spec.js
+```
+
+### Notebook Execution Tests
+
+Test notebooks locally without Colab:
+
+```bash
+cd python
+source .venv/bin/activate
+
+# Run notebook tests (requires NDIF_API_KEY)
+NDIF_API_KEY=your_key pytest tests/integration/test_notebook.py -v
+
+# Skip slow tests
+pytest tests/integration/test_notebook.py -v -m "not slow"
+```
+
+## Continuous Integration
+
+GitHub Actions runs automatically on:
+- Push to main
+- Pull requests to main
+- Manual trigger (workflow_dispatch)
+
+### Workflow Jobs
+
+| Job | Trigger | Description |
+|-----|---------|-------------|
+| `unit-tests` | All | Python and JS unit tests |
+| `browser-tests` | All | Playwright widget tests |
+| `integration-tests` | main branch | NDIF integration tests |
+| `colab-smoke-test` | Manual only | Full Colab test |
+
+### Setting Up CI for Your Fork
+
+1. Fork the repository
+2. Add repository secrets:
+   - `NDIF_API_KEY`: Your NDIF API key
+
+Note: Secrets are not available to workflows from fork PRs for security.
+
 ## Project Goals
 
 This package is intended for eventual integration into nnsight. Design priorities:

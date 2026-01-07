@@ -1,0 +1,142 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  # Fast tests - run on every push
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Python unit tests
+        working-directory: python
+        run: pytest tests/unit -v
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install JS dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Run JS unit tests
+        working-directory: js
+        run: npm test
+
+  # Browser tests - widget rendering
+  browser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: js
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests (excluding Colab)
+        working-directory: js
+        run: npx playwright test --ignore-pattern="**/colab-*.spec.js"
+
+  # Integration tests with NDIF - only on main branch or manual trigger
+  # Requires NDIF_API_KEY secret to be set
+  integration-tests:
+    runs-on: ubuntu-latest
+    # Only run if NDIF_API_KEY secret is available
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    needs: [unit-tests, browser-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run integration tests
+        working-directory: python
+        env:
+          NDIF_API_KEY: ${{ secrets.NDIF_API_KEY }}
+        run: |
+          if [ -n "$NDIF_API_KEY" ]; then
+            pytest tests/integration -v -m "integration and not slow"
+          else
+            echo "NDIF_API_KEY not set, skipping integration tests"
+          fi
+
+  # Colab smoke test - manual trigger only (expensive/slow)
+  colab-smoke-test:
+    runs-on: ubuntu-latest
+    # Only run on manual trigger
+    if: github.event_name == 'workflow_dispatch'
+    needs: [unit-tests, browser-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: js
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Colab smoke test
+        working-directory: js
+        env:
+          NDIF_API_KEY: ${{ secrets.NDIF_API_KEY }}
+          COLAB_TIMEOUT: "300000"
+        run: |
+          if [ -n "$NDIF_API_KEY" ]; then
+            npx playwright test colab-smoke-test.spec.js --timeout 600000
+          else
+            echo "NDIF_API_KEY not set, skipping Colab test"
+          fi
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colab-test-results
+          path: |
+            js/colab-smoke-test-result.png
+            js/test-results/
