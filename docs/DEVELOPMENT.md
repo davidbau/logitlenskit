@@ -361,9 +361,23 @@ npx playwright test widget-rendering.spec.js
 npx playwright test --ui
 ```
 
-## Google Colab Testing
+## Post-Deployment Testing: Google Colab Integration
 
-Colab tests verify that notebooks work correctly on Google Colab with NDIF.
+These tests are **real-world end-to-end tests** that verify the full LogitLensKit experience on Google Colab with live NDIF infrastructure. They are not part of the main test suite (which runs quickly via `npm test`), but serve as comprehensive post-deployment verification.
+
+**What these tests verify:**
+- Notebooks load correctly from GitHub into Colab
+- pip installation of logitlenskit works in Colab environment
+- NDIF API authentication and model access works
+- Remote model execution (Llama-3.1-8B) completes successfully
+- Widget rendering in Colab's iframe-based output cells
+- Widget interactivity (popup, row pinning, color modes)
+- Multiple widgets display correctly in the same notebook
+
+**Prerequisites:**
+- Google account
+- NDIF API key from [nnsight.net](https://nnsight.net)
+- Node.js 18+ and Playwright
 
 ### Quick Start
 
@@ -373,9 +387,9 @@ cd js
 # One-time setup (opens browser for Google login)
 npm run test:colab:setup
 
-# Then add NDIF_API to Colab secrets (see instructions below)
+# Add NDIF_API to your Colab secrets (see below)
 
-# Run Colab tests
+# Run the full Colab integration tests
 npm run test:colab
 ```
 
@@ -383,14 +397,13 @@ npm run test:colab
 
 **Step 1: Google Authentication**
 
-Run the setup script - it opens a browser where you sign in to Google:
+Run the setup script - it opens Chrome where you sign in to Google:
 
 ```bash
 npm run test:colab:setup
-# Or: npx playwright test colab-auth-setup.js --headed
 ```
 
-Sign in to Google when prompted. The script saves your auth state to `.auth/google-state.json` (this file is gitignored and expires after ~30 days).
+Sign in when prompted. The script saves auth state to `.auth/google-state.json` (gitignored, expires ~30 days).
 
 **Step 2: Add NDIF_API to Colab Secrets**
 
@@ -402,41 +415,85 @@ Sign in to Google when prompted. The script saves your auth state to `.auth/goog
    - Value: Your API key from [nnsight.net](https://nnsight.net)
 5. Toggle **"Notebook access"** ON
 
-The notebook will read this key automatically - no environment variables needed!
-
-### Running Colab Tests
+### Running the Tests
 
 ```bash
 cd js
 
-# Run authenticated Colab tests
+# Run both smoke and tutorial tests (headless, ~3-4 minutes total)
 npm run test:colab
 
-# Or run directly
-npx playwright test colab-authenticated.spec.js
+# Run with visible browser (useful for debugging)
+npm run test:colab -- --headed
 
-# Run unauthenticated tests (just verifies notebook loads)
-npx playwright test colab-smoke-test.spec.js
+# Run only the smoke test (~1-2 minutes)
+npx playwright test colab-authenticated.spec.js --grep "smoke"
+
+# Run only the tutorial test (~2-3 minutes)
+npx playwright test colab-authenticated.spec.js --grep "tutorial"
 ```
 
-### What Gets Tested
+### Test Details
 
-| Test Type | Auth Required | What It Tests |
-|-----------|---------------|---------------|
-| `colab-smoke-test.spec.js` | No | Notebook loads from GitHub, cell structure |
-| `colab-authenticated.spec.js` | Yes | Full execution, NDIF calls, widget rendering |
+| Test | Duration | Widgets Verified | What It Tests |
+|------|----------|------------------|---------------|
+| **Smoke test** | ~1-2 min | 2 widgets | Basic flow: install → configure → collect → display |
+| **Tutorial test** | ~2-3 min | 4+ widgets | Full tutorial: API usage, manual collection, layer subsets, multiple prompts |
+
+**Both tests verify:**
+- NDIF status check (model `meta-llama/Llama-3.1-8B` is RUNNING)
+- Notebook cell execution completes without errors
+- Widget HTML renders with correct structure (tokens, predictions, layers)
+- Popup opens when clicking prediction cells
+- Popup closes when clicking close button
+- Row pinning works when clicking input tokens
+- Multiple widgets in same output cell handled correctly
+
+### Test Output Example
+
+```
+✓ Model meta-llama/Llama-3.1-8B is RUNNING (HOT) - ready for use
+Opening smoke test notebook...
+Notebook loaded
+Found 10 cells
+Running all cells...
+Security dialog detected - clicking "Run anyway"...
+SUCCESS: All tests passed!
+
+=== Widget 1 (frame 11) ===
+  Input tokens: 3
+  First token: "<|begin_of_text|>"
+  Prediction cells: 63
+  Layer headers: 21
+  Widget title: "Smoke Test: Hello world"
+  Popup opened: true
+  Popup closed: true
+  Row pinning works: true
+
+✓ All 2 widgets verified with data and interactivity
+```
+
+### Error Detection
+
+The tests automatically detect and report:
+
+- **NDIF service errors**: "RemoteException", model deployment issues
+- **Auth expiration**: Prompts to re-run `npm run test:colab:setup`
+- **Missing secrets**: Clear error if NDIF_API not configured in Colab
 
 ### Troubleshooting
 
-**"Auth state not found"** - Run `npm run test:colab:setup` first
+| Issue | Solution |
+|-------|----------|
+| "Auth state not found" | Run `npm run test:colab:setup` |
+| "Google authentication expired" | Re-run setup (sessions expire ~30 days) |
+| "NDIF service error" | Check [api.ndif.us/status](https://api.ndif.us/status) for model availability |
+| "0 widget frames found" | Try `--headed` mode; may need longer wait times |
+| Widgets not interactive | Check browser console for JS errors |
 
-**Auth expired** - Re-run the setup script (sessions expire after ~30 days)
+### Manual Testing
 
-**NDIF errors** - Check your Colab secret is named `NDIF_API` and has notebook access enabled
-
-### Manual Colab Testing
-
-For quick manual verification:
+For quick manual verification without Playwright:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/davidbau/logitlenskit/blob/main/notebooks/smoke_test.ipynb)
 
@@ -444,10 +501,11 @@ For quick manual verification:
 2. Ensure NDIF_API secret is configured
 3. Run all cells (Runtime → Run all)
 4. Verify "ALL TESTS PASSED!" appears
+5. Scroll down to see rendered widgets
 
 ### Local Notebook Tests (Without Colab)
 
-Test notebooks locally using pytest + nbconvert:
+For faster iteration, test notebooks locally:
 
 ```bash
 cd python
@@ -455,9 +513,6 @@ source .venv/bin/activate
 
 # Run notebook tests (requires NDIF_API_KEY env var)
 NDIF_API_KEY=your_key pytest tests/integration/test_notebook.py -v
-
-# Skip slow tests
-pytest tests/integration/test_notebook.py -v -m "not slow"
 ```
 
 ## Continuous Integration

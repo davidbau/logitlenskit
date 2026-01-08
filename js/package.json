@@ -14,7 +14,7 @@
     "test:browser:headed": "npx playwright test --headed --ignore-pattern='**/colab-*.spec.js'",
     "test:browser:debug": "npx playwright test --debug",
     "test:colab": "./scripts/run-colab-tests.sh",
-    "test:colab:setup": "npx playwright test colab-auth-setup.js --headed",
+    "test:colab:setup": "npx playwright test tests/browser/colab-auth-setup.spec.js --headed",
     "build": "esbuild src/logit-lens-widget.js --minify --outfile=dist/logit-lens-widget.min.js",
     "lint": "eslint src/ tests/",
     "callgraph": "node build/build-callgraph.js",
