@@ -37,7 +37,7 @@ test.describe('Authenticated Colab Tests', () => {
     test.use({ storageState: AUTH_FILE });
 
     // These tests are slow - NDIF execution takes time
-    test.setTimeout(300000);  // 5 minutes
+    test.setTimeout(480000);  // 8 minutes (pip install + model load + NDIF execution)
 
     // Custom error class for auth failures to enable special handling
     class AuthExpiredError extends Error {
@@ -252,13 +252,153 @@ test.describe('Authenticated Colab Tests', () => {
         }
 
         // Wait for execution to complete
-        // The notebook prints "ALL TESTS PASSED!" on success
-        console.log('Waiting for execution (uses Colab secrets for NDIF_API)...');
+        // The notebook prints a success marker on completion - must check OUTPUT frames, not source
+        // Use string splitting to avoid matching the marker in notebook source code
+        const SUCCESS_MARKER = 'ALL TESTS ' + 'PASSED!';
+        console.log('Waiting for notebook execution...');
 
-        const successMarker = page.locator('text=ALL TESTS PASSED!');
-        await expect(successMarker).toBeVisible({ timeout: 240000 });
+        // Poll output iframes for success/failure markers
+        // Colab renders cell outputs in iframes with URLs containing 'outputframe'
+        let executionSuccess = false;
+        let executionError = null;
+        let lastProgressReport = '';
 
-        console.log('SUCCESS: All tests passed!');
+        // Progress markers to detect (helps show execution is proceeding)
+        const progressMarkers = [
+            'Installing build dependencies',
+            'Successfully installed',
+            'NDIF configured',
+            'NDIF API key configured',
+            'Loading model',
+            'Loaded',
+            'Collecting logit lens',
+            'Test 1:',
+            'Test 2:',
+            'Test 3:',
+            'Test 4:',
+            'Test 5:',
+            'Test 6:',
+            'PASS:',
+        ];
+
+        for (let pollAttempt = 0; pollAttempt < 150; pollAttempt++) {  // 5 minutes max
+            // Check for auth expiration
+            await checkForSignIn(page);
+
+            // Handle grant access dialog
+            await handleGrantAccessDialog();
+
+            // Search all output frames for success/error/progress markers
+            const frames = page.frames();
+            let allOutputContent = '';
+
+            for (const frame of frames) {
+                try {
+                    const url = frame.url();
+                    // Only check output frames (where cell output appears)
+                    if (!url.includes('outputframe')) continue;
+
+                    const content = await frame.content();
+                    allOutputContent += content + '\n';
+
+                    // Check for success marker in actual output
+                    // Also check for Test 5/6 completion as proxy (cell 7 prints success then renders widget)
+                    if (content.includes(SUCCESS_MARKER)) {
+                        console.log(`  ✓ Found "${SUCCESS_MARKER}" in output frame`);
+                        executionSuccess = true;
+                        break;
+                    }
+
+                    // Alternative: If Test 6 passed, the notebook completed (Test 6 runs AFTER success message)
+                    if (content.includes('Test 6:') && content.includes('PASS: UI options applied')) {
+                        console.log('  ✓ Test 6 completed - notebook execution successful');
+                        executionSuccess = true;
+                        break;
+                    }
+
+                    // Check for NDIF/module errors (fail fast)
+                    if (content.includes('Module logitlenskit') && content.includes('not whitelisted')) {
+                        executionError = 'Module not whitelisted error - the serialization fix may not be deployed yet';
+                    } else if (content.includes('RemoteException')) {
+                        // Extract more context
+                        const match = content.match(/RemoteException[^<]*/);
+                        executionError = match ? match[0].substring(0, 200) : 'RemoteException - NDIF execution failed';
+                    } else if (content.includes('ImportError:') || content.includes('ModuleNotFoundError:')) {
+                        executionError = 'Import error in notebook execution';
+                    }
+                } catch (e) {
+                    // Frame not accessible, skip
+                }
+            }
+
+            if (executionSuccess) break;
+
+            if (executionError) {
+                console.log(`\n❌ EXECUTION ERROR: ${executionError}`);
+                await page.screenshot({ path: 'colab-execution-error.png', fullPage: true });
+                throw new Error(`Notebook execution failed: ${executionError}`);
+            }
+
+            // Report progress markers as they appear
+            for (const marker of progressMarkers) {
+                if (allOutputContent.includes(marker) && !lastProgressReport.includes(marker)) {
+                    console.log(`  Progress: "${marker}" detected`);
+                }
+            }
+            lastProgressReport = allOutputContent;
+
+            if (pollAttempt % 15 === 0) {
+                console.log(`  Waiting... ${pollAttempt * 2}s elapsed`);
+                // Scroll page to help load lazy output iframes
+                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                await page.waitForTimeout(500);
+                await page.evaluate(() => window.scrollTo(0, 0));
+            }
+            await page.waitForTimeout(2000);
+        }
+
+        if (!executionSuccess) {
+            console.log('❌ Timed out waiting for success marker in output frames');
+
+            // Debug: dump output frame contents to help diagnose
+            console.log('\n--- DEBUG: Output frame contents ---');
+            const debugFrames = page.frames();
+            for (const frame of debugFrames) {
+                try {
+                    const url = frame.url();
+                    if (!url.includes('outputframe')) continue;
+
+                    const content = await frame.content();
+                    // Look for key markers
+                    const hasTests = content.includes('Test');
+                    const hasPass = content.includes('PASS');
+                    const hasAll = content.includes('ALL');
+                    const hasSuccessPartial = content.includes('TESTS') && content.includes('PASSED');
+                    console.log(`  Frame: ${url.substring(0, 60)}...`);
+                    console.log(`    Length: ${content.length}, hasTest: ${hasTests}, hasPass: ${hasPass}, hasAll: ${hasAll}, hasSuccessPartial: ${hasSuccessPartial}`);
+
+                    // If this frame has test output, show a snippet
+                    if (hasPass && content.length > 1000) {
+                        // Extract text content from HTML
+                        const textMatch = content.match(/>([^<]*PASS[^<]*)</g);
+                        if (textMatch) {
+                            console.log(`    Snippets with PASS: ${textMatch.slice(0, 3).join(' | ')}`);
+                        }
+                    }
+                } catch (e) {
+                    // Skip
+                }
+            }
+            console.log('--- END DEBUG ---\n');
+
+            // Take full-page screenshot at timeout
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await page.waitForTimeout(1000);
+            await page.screenshot({ path: 'colab-timeout.png', fullPage: true });
+            throw new Error('Notebook execution timed out - success marker not found in output');
+        }
+
+        console.log('✓ Notebook execution completed successfully!');
 
         // Poll for widgets to appear (instead of fixed wait)
         console.log('Waiting for widgets to render (polling every 2s)...');
