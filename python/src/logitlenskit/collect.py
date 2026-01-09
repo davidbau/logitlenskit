@@ -232,7 +232,11 @@ def collect_logit_lens(
             all_topk.append(probs.topk(k, dim=-1).indices.to(torch.int32))  # [n_pos, k]
 
             # Compute entropy of the probability distribution at each position
-            entropy = _compute_entropy(probs)  # [n_pos]
+            # Inlined to avoid serialization issues with NDIF remote execution
+            # (calling a function from this module inside trace would fail)
+            # H = -sum(p * log(p)), handle zeros with small epsilon
+            log_probs = torch.log(probs + 1e-10)
+            entropy = -torch.sum(probs * log_probs, dim=-1)  # [n_pos]
             all_entropy.append(entropy)
 
         # Save individual layer results - stacking happens client-side
