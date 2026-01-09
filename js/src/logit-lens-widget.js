@@ -63,6 +63,7 @@ var LogitLensWidget = (function() {
     // DATA NORMALIZATION
     // ═══════════════════════════════════════════════════════════════
     // Normalize data from compact format (v2) to internal format
+    // Returns { normalized: v1Data, v2Data: originalV2OrNull }
     function normalizeData(data) {
         // Already in v1 format (has cells)
         if (data.cells) {
@@ -70,7 +71,7 @@ var LogitLensWidget = (function() {
             if (!data.tokens && data.input) {
                 data.tokens = data.input;
             }
-            return data;
+            return { normalized: data, v2Data: null };
         }
 
         // V2 compact format: convert to v1
@@ -109,15 +110,18 @@ var LogitLensWidget = (function() {
             cells.push(posData);
         }
 
-        return {
+        var normalized = {
             layers: data.layers,
             tokens: data.input,
             cells: cells,
             meta: data.meta || {}
         };
+
+        // Keep reference to v2 data for entropy access
+        return { normalized: normalized, v2Data: data };
     }
 
-    return function(containerArg, widgetData, uiState) {
+    return function(containerArg, inputData, uiState) {
         var uid = generateUid();
         var container;
         if (typeof containerArg === 'string') {
@@ -131,7 +135,9 @@ var LogitLensWidget = (function() {
         }
 
         // Normalize data format (convert v2 compact to v1 internal)
-        widgetData = normalizeData(widgetData);
+        var dataResult = normalizeData(inputData);
+        var widgetData = dataResult.normalized;
+        var v2Data = dataResult.v2Data;  // Keep v2 data for entropy access
 
         // Inject scoped CSS
         var style = document.createElement("style");
@@ -307,6 +313,20 @@ var LogitLensWidget = (function() {
             var nPositions = widgetData.tokens.length;
             var defaultNextToken = widgetData.cells[nPositions - 1][nLayers - 1].token;
 
+            // Compute max entropy for normalization (if entropy data available)
+            var maxEntropy = 0;
+            if (v2Data && v2Data.entropy) {
+                for (var li = 0; li < v2Data.entropy.length; li++) {
+                    for (var pos = 0; pos < v2Data.entropy[li].length; pos++) {
+                        if (v2Data.entropy[li][pos] > maxEntropy) {
+                            maxEntropy = v2Data.entropy[li][pos];
+                        }
+                    }
+                }
+            }
+            // Use at least 1.0 to avoid division issues with very low entropy data
+            maxEntropy = Math.max(maxEntropy, 1.0);
+
             // ═══════════════════════════════════════════════════════════════
             // CONFIGURATION (fixed limits and palettes)
             // ═══════════════════════════════════════════════════════════════
@@ -360,6 +380,16 @@ var LogitLensWidget = (function() {
                 customTitle: (uiState && uiState.title) || "Logit Lens: Top Predictions by Layer",
                 darkModeOverride: (uiState && uiState.darkMode !== undefined) ? uiState.darkMode : null,
 
+                // Visibility toggles (new features)
+                showHeatmap: (uiState && uiState.showHeatmap !== undefined) ? uiState.showHeatmap : true,
+                showChart: (uiState && uiState.showChart !== undefined) ? uiState.showChart : true,
+
+                // Trajectory metric mode: "probability" or "rank"
+                trajectoryMetric: (uiState && uiState.trajectoryMetric) || "probability",
+
+                // Event listeners for external integration
+                eventListeners: {},
+
                 // Widget linking
                 linkedWidgets: [],
                 isSyncing: false,
@@ -404,8 +434,64 @@ var LogitLensWidget = (function() {
                 overlay: function() { return document.getElementById(uid + "_overlay"); },
                 resizeHint: function() { return document.getElementById(uid + "_resize_hint"); },
                 resizeBottom: function() { return document.getElementById(uid + "_resize_bottom"); },
-                resizeRight: function() { return document.getElementById(uid + "_resize_right"); }
+                resizeRight: function() { return document.getElementById(uid + "_resize_right"); },
+                chartContainer: function() { return document.getElementById(uid + "_chart_container"); },
+                tableWrapper: function() { return document.querySelector("#" + uid + " .table-wrapper"); }
             };
+
+            // ═══════════════════════════════════════════════════════════════
+            // EVENT EMITTER
+            // ═══════════════════════════════════════════════════════════════
+            function emitEvent(eventName, data) {
+                var listeners = state.eventListeners[eventName];
+                if (!listeners) return;
+                for (var i = 0; i < listeners.length; i++) {
+                    try {
+                        listeners[i](data);
+                    } catch (e) {
+                        console.error("Event listener error:", e);
+                    }
+                }
+            }
+
+            function addEventListener(eventName, callback) {
+                if (!state.eventListeners[eventName]) {
+                    state.eventListeners[eventName] = [];
+                }
+                state.eventListeners[eventName].push(callback);
+            }
+
+            function removeEventListener(eventName, callback) {
+                var listeners = state.eventListeners[eventName];
+                if (!listeners) return;
+                var idx = listeners.indexOf(callback);
+                if (idx >= 0) {
+                    listeners.splice(idx, 1);
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // DATA CAPABILITY DETECTION
+            // ═══════════════════════════════════════════════════════════════
+            function hasEntropyData() {
+                return v2Data && Array.isArray(v2Data.entropy) && v2Data.entropy.length > 0;
+            }
+
+            function hasRankData() {
+                // Check if any tracked token has rank data
+                // V2 format stores rank in tracked[pos][token].rank array
+                if (!v2Data || !v2Data.tracked) return false;
+                for (var pos = 0; pos < v2Data.tracked.length; pos++) {
+                    var trackedAtPos = v2Data.tracked[pos];
+                    for (var token in trackedAtPos) {
+                        var data = trackedAtPos[token];
+                        if (data && typeof data === "object" && Array.isArray(data.rank)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
 
             // ═══════════════════════════════════════════════════════════════
             // HELPER FUNCTIONS
@@ -492,21 +578,49 @@ var LogitLensWidget = (function() {
             }
 
             function getGroupTrajectory(group, pos) {
+                // For rank mode, return rank trajectory (min rank = best among group)
+                if (state.trajectoryMetric === "rank") {
+                    var result = widgetData.layers.map(function() { return null; });
+                    var hasAnyData = false;
+                    for (var i = 0; i < group.tokens.length; i++) {
+                        var rankTraj = getRankTrajectoryForToken(group.tokens[i], pos);
+                        if (rankTraj !== null) {
+                            hasAnyData = true;
+                            for (var j = 0; j < result.length; j++) {
+                                if (rankTraj[j] !== null) {
+                                    // Take minimum rank (best rank among group tokens)
+                                    if (result[j] === null || rankTraj[j] < result[j]) {
+                                        result[j] = rankTraj[j];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return hasAnyData ? result : null;
+                }
+
+                // Default: probability trajectory (sum of probabilities)
                 var result = widgetData.layers.map(function() { return 0; });
+                var hasAnyData = false;
                 for (var i = 0; i < group.tokens.length; i++) {
                     var traj = getTrajectoryForToken(group.tokens[i], pos);
-                    for (var j = 0; j < result.length; j++) {
-                        result[j] += traj[j];
+                    if (traj !== null) {
+                        hasAnyData = true;
+                        for (var j = 0; j < result.length; j++) {
+                            result[j] += traj[j];
+                        }
                     }
                 }
-                return result;
+                return hasAnyData ? result : null;
             }
 
             function getGroupProbAtLayer(group, pos, layerIdx) {
                 var sum = 0;
                 for (var i = 0; i < group.tokens.length; i++) {
                     var traj = getTrajectoryForToken(group.tokens[i], pos);
-                    sum += traj[layerIdx] || 0;
+                    if (traj !== null) {
+                        sum += traj[layerIdx] || 0;
+                    }
                 }
                 return sum;
             }
@@ -545,8 +659,10 @@ var LogitLensWidget = (function() {
                 if (state.pinnedGroups.length === 0) return true;
                 for (var i = 0; i < state.pinnedGroups.length; i++) {
                     var traj = getGroupTrajectory(state.pinnedGroups[i], pos);
-                    var maxProb = Math.max.apply(null, traj);
-                    if (maxProb >= threshold) return false;
+                    if (traj !== null) {
+                        var maxProb = Math.max.apply(null, traj);
+                        if (maxProb >= threshold) return false;
+                    }
                 }
                 return true;
             }
@@ -752,7 +868,58 @@ var LogitLensWidget = (function() {
                         if (cellData.topk[ki].token === token) return cellData.topk[ki].trajectory;
                     }
                 }
-                return widgetData.layers.map(function() { return 0; });
+                return null;  // Return null for untracked tokens
+            }
+
+            // Check if a token is tracked (has trajectory data) at a position
+            function isTokenTracked(token, pos) {
+                for (var li = 0; li < widgetData.cells[pos].length; li++) {
+                    var cellData = widgetData.cells[pos][li];
+                    if (cellData.token === token) return true;
+                    for (var ki = 0; ki < cellData.topk.length; ki++) {
+                        if (cellData.topk[ki].token === token) return true;
+                    }
+                }
+                return false;
+            }
+
+            // Get rank trajectory for a token at a position
+            // Returns array of ranks (1 = top) per layer, or null if not tracked
+            function getRankTrajectoryForToken(token, pos) {
+                // Check v2Data for explicit rank data
+                if (v2Data && v2Data.tracked && v2Data.tracked[pos]) {
+                    var tokenData = v2Data.tracked[pos][token];
+                    if (tokenData && typeof tokenData === "object" && Array.isArray(tokenData.rank)) {
+                        return tokenData.rank;
+                    }
+                }
+
+                // Fallback: compute approximate rank from topk position at each layer
+                // This gives us rank 1 to topk.length, or null if token not in topk
+                var ranks = [];
+                for (var li = 0; li < widgetData.cells[pos].length; li++) {
+                    var cellData = widgetData.cells[pos][li];
+                    var rank = null;
+                    // Check if it's the top prediction
+                    if (cellData.token === token) {
+                        rank = 1;
+                    } else {
+                        // Check topk list
+                        for (var ki = 0; ki < cellData.topk.length; ki++) {
+                            if (cellData.topk[ki].token === token) {
+                                // Rank is position in sorted topk (1-indexed)
+                                // topk[0] is highest prob = rank 1, topk[1] = rank 2, etc.
+                                rank = ki + 1;
+                                break;
+                            }
+                        }
+                    }
+                    ranks.push(rank);
+                }
+
+                // Return null if no valid ranks found
+                var hasValidRank = ranks.some(function(r) { return r !== null; });
+                return hasValidRank ? ranks : null;
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -836,10 +1003,38 @@ var LogitLensWidget = (function() {
                 if (maxRows === null || maxRows >= totalTokens) {
                     visiblePositions = widgetData.tokens.map(function(_, i) { return i; });
                 } else {
-                    var startPos = totalTokens - maxRows;
-                    visiblePositions = [];
-                    for (var i = startPos; i < totalTokens; i++) {
-                        visiblePositions.push(i);
+                    // Smart row visibility: pinned rows are always visible
+                    // Two-pass algorithm:
+                    // 1. First pass: collect all pinned row positions
+                    // 2. Second pass: fill remaining slots with unpinned rows (prioritizing later positions)
+                    var pinnedPositions = state.pinnedRows.map(function(pr) { return pr.pos; });
+                    var pinnedSet = new Set(pinnedPositions);
+
+                    // If more pinned rows than maxRows, show all pinned rows (exceed maxRows)
+                    if (pinnedPositions.length >= maxRows) {
+                        // All slots go to pinned rows, plus include the last position if not pinned
+                        visiblePositions = pinnedPositions.slice();
+                        if (!pinnedSet.has(totalTokens - 1)) {
+                            visiblePositions.push(totalTokens - 1);
+                        }
+                    } else {
+                        // Fill remaining slots with unpinned rows from the end
+                        var remainingSlots = maxRows - pinnedPositions.length;
+                        var unpinnedPositions = [];
+                        for (var i = totalTokens - 1; i >= 0 && unpinnedPositions.length < remainingSlots; i--) {
+                            if (!pinnedSet.has(i)) {
+                                unpinnedPositions.push(i);
+                            }
+                        }
+                        unpinnedPositions.reverse();  // Restore chronological order
+
+                        // Merge pinned and unpinned, maintaining chronological order
+                        visiblePositions = [];
+                        for (var i = 0; i < totalTokens; i++) {
+                            if (pinnedSet.has(i) || unpinnedPositions.indexOf(i) >= 0) {
+                                visiblePositions.push(i);
+                            }
+                        }
                     }
                 }
 
@@ -859,14 +1054,23 @@ var LogitLensWidget = (function() {
                 // Helper to get color for a mode
                 function getColorForMode(mode) {
                     if (mode === "top") return state.heatmapBaseColor || defaultBaseColor;
+                    if (mode === "entropy") return "#9c27b0";  // Purple for uncertainty
                     var groupColor = getColorForToken(mode);
                     if (groupColor) return groupColor;
                     return state.heatmapNextColor || defaultNextColor;
                 }
 
-                // Helper to get probability for a mode at a cell
-                function getProbForMode(mode, cellData) {
+                // Helper to get probability/intensity for a mode at a cell
+                // For entropy mode, returns normalized entropy (higher = more uncertainty)
+                function getProbForMode(mode, cellData, pos, li) {
                     if (mode === "top") return cellData.prob;
+                    if (mode === "entropy") {
+                        // Get entropy from v2Data and normalize to 0-1
+                        if (v2Data && v2Data.entropy && v2Data.entropy[li]) {
+                            return v2Data.entropy[li][pos] / maxEntropy;
+                        }
+                        return 0;
+                    }
                     var found = cellData.topk.find(function(t) { return t.token === mode; });
                     return found ? found.prob : 0;
                 }
@@ -918,7 +1122,7 @@ var LogitLensWidget = (function() {
                         var winningMode = null;
                         if (state.colorModes.length > 0) {
                             state.colorModes.forEach(function(mode) {
-                                var modeProb = getProbForMode(mode, cellData);
+                                var modeProb = getProbForMode(mode, cellData, pos, li);
                                 // "top" only wins if strictly greater; others win on >=
                                 var wins = (winningMode === "top") ? (modeProb >= cellProb) :
                                            (mode === "top") ? (modeProb > cellProb) :
@@ -931,14 +1135,21 @@ var LogitLensWidget = (function() {
                             });
                         }
 
-                        var color = state.colorModes.length === 0 ? (isDarkMode() ? "#1e1e1e" : "#fff") : probToColor(cellProb, winningColor);
+                        var color;
                         var textColor;
-                        if (isDarkMode()) {
-                            // Dark mode: light text always (glowing colors on dark background)
-                            textColor = state.colorModes.length === 0 ? "#e0e0e0" : (cellProb < 0.7 ? "#e0e0e0" : "#fff");
+                        // Check if heatmap is disabled or no color modes
+                        if (!state.showHeatmap || state.colorModes.length === 0) {
+                            color = isDarkMode() ? "#1e1e1e" : "#fff";
+                            textColor = isDarkMode() ? "#e0e0e0" : "#333";
                         } else {
-                            // Light mode: dark text on light backgrounds, white text on saturated colors
-                            textColor = state.colorModes.length === 0 ? "#333" : (cellProb < 0.5 ? "#333" : "#fff");
+                            color = probToColor(cellProb, winningColor);
+                            if (isDarkMode()) {
+                                // Dark mode: light text always (glowing colors on dark background)
+                                textColor = cellProb < 0.7 ? "#e0e0e0" : "#fff";
+                            } else {
+                                // Light mode: dark text on light backgrounds, white text on saturated colors
+                                textColor = cellProb < 0.5 ? "#333" : "#fff";
+                            }
                         }
                         var pinnedColor = getColorForToken(cellData.token);
                         if (!pinnedColor) {
@@ -1172,6 +1383,17 @@ var LogitLensWidget = (function() {
                     colorType: "heatmap",
                     groupIdx: null
                 });
+
+                // "entropy" - only show if entropy data available
+                if (hasEntropyData()) {
+                    menuItems.push({
+                        mode: "entropy",
+                        label: "entropy (uncertainty)",
+                        color: "#9c27b0",
+                        colorType: "entropy",
+                        groupIdx: null
+                    });
+                }
 
                 // Specific top token (if not pinned) - uses state.heatmapNextColor
                 if (findGroupForToken(topToken) < 0) {
@@ -1602,8 +1824,49 @@ var LogitLensWidget = (function() {
                 var rect = cell.getBoundingClientRect();
                 var containerRect = dom.widget().getBoundingClientRect();
 
-                popup.style.left = (rect.left - containerRect.left + rect.width + 5) + "px";
-                popup.style.top = (rect.top - containerRect.top) + "px";
+                // Intelligent popup positioning:
+                // 1. Default: position to the right of the cell
+                // 2. If popup would overflow right edge, position to the left of the cell
+                // 3. If popup would overflow bottom, position above the cell
+
+                // Estimate popup size (approximate - popup isn't rendered yet)
+                var popupWidth = 180;   // Approximate popup width
+                var popupHeight = 200;  // Approximate popup height
+
+                // Calculate available space
+                var viewportWidth = window.innerWidth;
+                var viewportHeight = window.innerHeight;
+
+                // Default position (to the right of cell)
+                var left = rect.left - containerRect.left + rect.width + 5;
+                var top = rect.top - containerRect.top;
+
+                // Check right edge collision
+                var absoluteRight = containerRect.left + left + popupWidth;
+                if (absoluteRight > viewportWidth) {
+                    // Position to the left of the cell instead
+                    left = rect.left - containerRect.left - popupWidth - 5;
+                    // Ensure it doesn't go off the left edge
+                    if (left < -containerRect.left) {
+                        left = Math.max(0, rect.left - containerRect.left - popupWidth - 5);
+                    }
+                }
+
+                // Check bottom edge collision
+                var absoluteBottom = rect.top + popupHeight;
+                if (absoluteBottom > viewportHeight) {
+                    // Position above the cell or adjust upward
+                    var spaceAbove = rect.top;
+                    var spaceBelow = viewportHeight - rect.bottom;
+                    if (spaceAbove > spaceBelow) {
+                        // More space above - position above the cell
+                        top = rect.top - containerRect.top - popupHeight;
+                    }
+                    // Otherwise keep original top position (will scroll if needed)
+                }
+
+                popup.style.left = left + "px";
+                popup.style.top = top + "px";
 
                 dom.popupLayer().textContent = widgetData.layers[li];
                 dom.popupPos().innerHTML = pos + "<br>Input <code>" + escapeHtml(visualizeSpaces(widgetData.tokens[pos])) + "</code>";
@@ -1999,7 +2262,7 @@ var LogitLensWidget = (function() {
                 yLabel.style.fontSize = "var(--ll-content-size, 14px)";
                 yLabel.setAttribute("fill", "#666");
                 yLabel.setAttribute("transform", "rotate(-90)");
-                yLabel.textContent = "Probability";
+                yLabel.textContent = state.trajectoryMetric === "rank" ? "Rank" : "Probability";
                 svg.appendChild(yLabel);
 
                 // Determine which positions to show trajectories for
@@ -2012,22 +2275,35 @@ var LogitLensWidget = (function() {
                     positionsToShow.push(pos);
                 }
 
-                var allProbs = [];
+                var allValues = [];
                 positionsToShow.forEach(function(showPos) {
                     state.pinnedGroups.forEach(function(group) {
                         var traj = getGroupTrajectory(group, showPos);
-                        allProbs = allProbs.concat(traj);
+                        if (traj) {
+                            traj.forEach(function(v) { if (v !== null) allValues.push(v); });
+                        }
                     });
                 });
-                if (hoverTrajectory) allProbs = allProbs.concat(hoverTrajectory);
-                var rawMaxProb = Math.max.apply(null, allProbs.concat([0.001]));  // 0.1% minimum
+                if (hoverTrajectory) {
+                    hoverTrajectory.forEach(function(v) { if (v !== null) allValues.push(v); });
+                }
 
                 // ─────────────────────────────────────────────────────────────
                 // SCALE CALCULATION: Determine y-axis scale and labels
                 // ─────────────────────────────────────────────────────────────
-                var maxProb = niceMax(rawMaxProb);
+                var isRankMode = state.trajectoryMetric === "rank";
+                var maxValue;
+                if (isRankMode) {
+                    // For rank: max rank determines scale (min is always 1)
+                    var rawMaxRank = allValues.length > 0 ? Math.max.apply(null, allValues) : 10;
+                    maxValue = Math.max(rawMaxRank, 2);  // At least rank 2 for scale
+                } else {
+                    // For probability: max prob determines scale
+                    var rawMaxProb = allValues.length > 0 ? Math.max.apply(null, allValues.concat([0.001])) : 0.001;
+                    maxValue = niceMax(rawMaxProb);
+                }
 
-                // Draw max scale tick and label at top of y-axis (only if there's data)
+                // Draw scale tick and label at top of y-axis (only if there's data)
                 var hasData = state.pinnedGroups.length > 0 || (hoverTrajectory && hoverLabel);
                 if (hasData) {
                     var tickY = 0;  // top of chart
@@ -2045,7 +2321,8 @@ var LogitLensWidget = (function() {
                     tickLabel.setAttribute("text-anchor", "end");
                     tickLabel.style.fontSize = "calc(var(--ll-content-size, 14px) * 0.9)";
                     tickLabel.setAttribute("fill", isDarkMode() ? "#aaa" : "#666");
-                    tickLabel.textContent = formatPct(maxProb);
+                    // For rank: show "1" at top (best rank), for probability: show max percentage
+                    tickLabel.textContent = isRankMode ? "1" : formatPct(maxValue);
                     g.appendChild(tickLabel);
                 }
 
@@ -2078,7 +2355,7 @@ var LogitLensWidget = (function() {
                     state.pinnedGroups.forEach(function(group, groupIdx) {
                         var traj = getGroupTrajectory(group, showPos);
                         var groupLabel = getGroupLabel(group);
-                        drawSingleTrajectory(trajG, traj, group.color, maxProb, groupLabel, false, chartInnerWidth, lineStyle.dash);
+                        drawSingleTrajectory(trajG, traj, group.color, maxValue, groupLabel, false, chartInnerWidth, lineStyle.dash, isRankMode);
                     });
                 });
 
@@ -2239,7 +2516,7 @@ var LogitLensWidget = (function() {
                 // HOVER TRAJECTORY: Show comparison trajectory on hover
                 // ─────────────────────────────────────────────────────────────
                 if (hoverTrajectory && hoverLabel) {
-                    drawSingleTrajectory(trajG, hoverTrajectory, hoverColor || "#999", maxProb, hoverLabel, true, chartInnerWidth, "");
+                    drawSingleTrajectory(trajG, hoverTrajectory, hoverColor || "#999", maxValue, hoverLabel, true, chartInnerWidth, "", isRankMode);
 
                     var legendItem = document.createElementNS("http://www.w3.org/2000/svg", "g");
                     legendItem.setAttribute("class", "legend-item hover-legend");
@@ -2274,7 +2551,7 @@ var LogitLensWidget = (function() {
                 }
             }
 
-            function drawSingleTrajectory(g, trajectory, color, maxProb, label, isHover, chartInnerWidth, dashPattern) {
+            function drawSingleTrajectory(g, trajectory, color, maxValue, label, isHover, chartInnerWidth, dashPattern, isRankMode) {
                 if (!trajectory || trajectory.length === 0) return;
 
                 var chartMargin = getChartMargin();
@@ -2292,34 +2569,56 @@ var LogitLensWidget = (function() {
                     return dotRadius + ((layerIdx - state.plotMinLayer) / visibleLayerRange) * (usableWidth - 2 * dotRadius);
                 }
 
+                // Y-coordinate calculation:
+                // - Probability mode: higher value = higher on chart (standard)
+                // - Rank mode: rank 1 = top of chart, higher rank = lower on chart (inverted)
+                function valueToY(value) {
+                    if (value === null) return null;
+                    if (isRankMode) {
+                        // Rank: 1 = top (y=0), maxValue = bottom (y=chartInnerHeight)
+                        return ((value - 1) / (maxValue - 1)) * chartInnerHeight;
+                    } else {
+                        // Probability: 0 = bottom, maxValue = top
+                        return chartInnerHeight - (value / maxValue) * chartInnerHeight;
+                    }
+                }
+
                 var pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
                 if (isHover) pathEl.style.opacity = "0.7";
 
                 var d = "";
+                var firstPoint = true;
                 trajectory.forEach(function(p, layerIdx) {
+                    if (p === null) return;  // Skip null values in rank trajectories
                     var x = layerToX(layerIdx);
-                    var y = chartInnerHeight - (p / maxProb) * chartInnerHeight;
-                    d += (layerIdx === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+                    var y = valueToY(p);
+                    if (y === null) return;
+                    d += (firstPoint ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+                    firstPoint = false;
                 });
 
-                pathEl.setAttribute("d", d);
-                pathEl.setAttribute("fill", "none");
-                pathEl.setAttribute("stroke", color);
-                pathEl.setAttribute("stroke-width", strokeWidth);
-                // Use provided dash pattern (scaled), or default hover pattern
-                if (isHover) {
-                    pathEl.setAttribute("stroke-dasharray", (4 * fontScale) + "," + (2 * fontScale));
-                } else if (dashPattern) {
-                    // Scale the provided dash pattern
-                    var scaledDash = dashPattern.split(",").map(function(v) { return parseFloat(v) * fontScale; }).join(",");
-                    pathEl.setAttribute("stroke-dasharray", scaledDash);
+                if (d) {
+                    pathEl.setAttribute("d", d);
+                    pathEl.setAttribute("fill", "none");
+                    pathEl.setAttribute("stroke", color);
+                    pathEl.setAttribute("stroke-width", strokeWidth);
+                    // Use provided dash pattern (scaled), or default hover pattern
+                    if (isHover) {
+                        pathEl.setAttribute("stroke-dasharray", (4 * fontScale) + "," + (2 * fontScale));
+                    } else if (dashPattern) {
+                        // Scale the provided dash pattern
+                        var scaledDash = dashPattern.split(",").map(function(v) { return parseFloat(v) * fontScale; }).join(",");
+                        pathEl.setAttribute("stroke-dasharray", scaledDash);
+                    }
+                    g.appendChild(pathEl);
                 }
-                g.appendChild(pathEl);
 
                 state.currentVisibleIndices.forEach(function(layerIdx) {
                     var p = trajectory[layerIdx];
+                    if (p === null) return;  // Skip null values
                     var x = layerToX(layerIdx);
-                    var y = chartInnerHeight - (p / maxProb) * chartInnerHeight;
+                    var y = valueToY(p);
+                    if (y === null) return;
 
                     var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                     circle.setAttribute("cx", x.toFixed(1));
@@ -2329,7 +2628,11 @@ var LogitLensWidget = (function() {
                     if (isHover) circle.style.opacity = "0.7";
 
                     var title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-                    title.textContent = (label || "") + " L" + widgetData.layers[layerIdx] + ": " + (p * 100).toFixed(2) + "%";
+                    if (isRankMode) {
+                        title.textContent = (label || "") + " L" + widgetData.layers[layerIdx] + ": rank " + p;
+                    } else {
+                        title.textContent = (label || "") + " L" + widgetData.layers[layerIdx] + ": " + (p * 100).toFixed(2) + "%";
+                    }
                     circle.appendChild(title);
                     g.appendChild(circle);
                 });
@@ -2563,7 +2866,10 @@ var LogitLensWidget = (function() {
                     }),
                     heatmapBaseColor: state.heatmapBaseColor,
                     heatmapNextColor: state.heatmapNextColor,
-                    darkMode: state.darkModeOverride
+                    darkMode: state.darkModeOverride,
+                    showHeatmap: state.showHeatmap,
+                    showChart: state.showChart,
+                    trajectoryMetric: state.trajectoryMetric
                 };
             }
 
@@ -2723,6 +3029,207 @@ var LogitLensWidget = (function() {
                         title: style.getPropertyValue('--ll-title-size').trim() || '20px',
                         content: style.getPropertyValue('--ll-content-size').trim() || '14px'
                     };
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Event Emitter API
+                // ═══════════════════════════════════════════════════════════════
+                on: function(eventName, callback) {
+                    addEventListener(eventName, callback);
+                    return publicInterface;
+                },
+                off: function(eventName, callback) {
+                    removeEventListener(eventName, callback);
+                    return publicInterface;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Visibility Toggles
+                // ═══════════════════════════════════════════════════════════════
+                setShowHeatmap: function(show) {
+                    state.showHeatmap = !!show;
+                    render();
+                    emitEvent('showHeatmap', state.showHeatmap);
+                    return publicInterface;
+                },
+                getShowHeatmap: function() {
+                    return state.showHeatmap;
+                },
+                setShowChart: function(show) {
+                    state.showChart = !!show;
+                    var chartContainer = dom.chartContainer();
+                    if (chartContainer) {
+                        chartContainer.style.display = state.showChart ? "block" : "none";
+                    }
+                    emitEvent('showChart', state.showChart);
+                    return publicInterface;
+                },
+                getShowChart: function() {
+                    return state.showChart;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Trajectory Metric API
+                // ═══════════════════════════════════════════════════════════════
+                setTrajectoryMetric: function(metric) {
+                    if (metric === "probability" || metric === "rank") {
+                        state.trajectoryMetric = metric;
+                        var chartInnerWidth = updateChartDimensions();
+                        drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
+                        emitEvent('trajectoryMetric', metric);
+                    }
+                    return publicInterface;
+                },
+                getTrajectoryMetric: function() {
+                    return state.trajectoryMetric;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Title API
+                // ═══════════════════════════════════════════════════════════════
+                setTitle: function(title) {
+                    state.customTitle = title || "";
+                    updateTitle();
+                    emitEvent('title', state.customTitle);
+                    return publicInterface;
+                },
+                getTitle: function() {
+                    return state.customTitle;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Color Mode API
+                // ═══════════════════════════════════════════════════════════════
+                setColorModes: function(modes) {
+                    if (!Array.isArray(modes)) {
+                        modes = modes ? [modes] : [];
+                    }
+                    state.colorModes = modes.slice();
+                    render();
+                    emitEvent('colorModes', state.colorModes.slice());
+                    return publicInterface;
+                },
+                getColorModes: function() {
+                    return state.colorModes.slice();
+                },
+                addColorMode: function(mode) {
+                    if (state.colorModes.indexOf(mode) === -1) {
+                        state.colorModes.push(mode);
+                        render();
+                        emitEvent('colorModes', state.colorModes.slice());
+                    }
+                    return publicInterface;
+                },
+                removeColorMode: function(mode) {
+                    var idx = state.colorModes.indexOf(mode);
+                    if (idx >= 0) {
+                        state.colorModes.splice(idx, 1);
+                        render();
+                        emitEvent('colorModes', state.colorModes.slice());
+                    }
+                    return publicInterface;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Row/Group Manipulation API
+                // ═══════════════════════════════════════════════════════════════
+                togglePinnedRow: function(pos) {
+                    if (pos < 0 || pos >= nPositions) return publicInterface;
+                    var wasPinned = findPinnedRow(pos) >= 0;
+                    togglePinnedRow(pos);
+                    render();
+                    emitEvent('pinnedRows', publicInterface.getPinnedRows());
+                    return publicInterface;
+                },
+                getPinnedRows: function() {
+                    return state.pinnedRows.map(function(pr) {
+                        return { pos: pr.pos, line: pr.lineStyle.name };
+                    });
+                },
+                setPinnedRows: function(rows) {
+                    state.pinnedRows = rows.map(function(r) {
+                        var style = lineStyles.find(function(ls) { return ls.name === r.line; }) || lineStyles[0];
+                        return { pos: r.pos, lineStyle: style };
+                    });
+                    render();
+                    emitEvent('pinnedRows', publicInterface.getPinnedRows());
+                    return publicInterface;
+                },
+                getPinnedGroups: function() {
+                    return JSON.parse(JSON.stringify(state.pinnedGroups));
+                },
+                setPinnedGroups: function(groups) {
+                    state.pinnedGroups = JSON.parse(JSON.stringify(groups));
+                    render();
+                    emitEvent('pinnedGroups', publicInterface.getPinnedGroups());
+                    return publicInterface;
+                },
+                pinToken: function(token, options) {
+                    options = options || {};
+                    var existingIdx = findGroupForToken(token);
+                    if (existingIdx >= 0) return publicInterface;
+
+                    var color = options.color || getNextColor();
+                    var newGroup = { color: color, tokens: [token] };
+                    state.pinnedGroups.push(newGroup);
+                    state.lastPinnedGroupIndex = state.pinnedGroups.length - 1;
+                    render();
+                    emitEvent('pinnedGroups', publicInterface.getPinnedGroups());
+                    return publicInterface;
+                },
+                unpinToken: function(token) {
+                    var groupIdx = findGroupForToken(token);
+                    if (groupIdx < 0) return publicInterface;
+
+                    var group = state.pinnedGroups[groupIdx];
+                    group.tokens = group.tokens.filter(function(t) { return t !== token; });
+                    if (group.tokens.length === 0) {
+                        state.pinnedGroups.splice(groupIdx, 1);
+                    }
+                    render();
+                    emitEvent('pinnedGroups', publicInterface.getPinnedGroups());
+                    return publicInterface;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Hover Synchronization API
+                // ═══════════════════════════════════════════════════════════════
+                hoverRow: function(pos) {
+                    if (pos === null || pos === undefined) {
+                        return publicInterface.clearHover();
+                    }
+                    if (pos < 0 || pos >= nPositions) return publicInterface;
+                    state.currentHoverPos = pos;
+                    var chartInnerWidth = updateChartDimensions();
+                    var bestToken = findHighestProbToken(pos, 2, 0.05);
+                    if (bestToken && findGroupForToken(bestToken) < 0) {
+                        var traj = getTrajectoryForToken(bestToken, pos);
+                        drawAllTrajectories(traj, "#999", bestToken, chartInnerWidth, pos);
+                    } else {
+                        drawAllTrajectories(null, null, null, chartInnerWidth, pos);
+                    }
+                    emitEvent('hover', pos);
+                    return publicInterface;
+                },
+                clearHover: function() {
+                    state.currentHoverPos = nPositions - 1;
+                    var chartInnerWidth = updateChartDimensions();
+                    drawAllTrajectories(null, null, null, chartInnerWidth, state.currentHoverPos);
+                    emitEvent('hover', null);
+                    return publicInterface;
+                },
+                getHoveredRow: function() {
+                    return state.currentHoverPos;
+                },
+
+                // ═══════════════════════════════════════════════════════════════
+                // Data Capability Detection
+                // ═══════════════════════════════════════════════════════════════
+                hasEntropyData: hasEntropyData,
+                hasRankData: hasRankData,
+                isTokenTracked: function(token, pos) {
+                    if (pos < 0 || pos >= nPositions) return false;
+                    return isTokenTracked(token, pos);
                 }
             };
 

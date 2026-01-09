@@ -21,11 +21,11 @@ def to_js_format(data: Dict) -> Dict:
 
     Args:
         data: Dict from collect_logit_lens() with keys:
-            model, input, layers, topk, tracked, probs, vocab
+            model, input, layers, topk, tracked, probs, vocab, entropy (optional)
 
     Returns:
         Dict in JavaScript V2 format with keys:
-            meta, input, layers, topk, tracked
+            meta, input, layers, topk, tracked, entropy (if available)
 
     Example:
         >>> js_data = to_js_format(data)
@@ -51,13 +51,23 @@ def to_js_format(data: Dict) -> Dict:
         for pos in range(n_pos)
     ]
 
-    return {
+    result = {
         "meta": {"version": 2, "model": data["model"]},
         "input": data["input"],
         "layers": data["layers"],
         "topk": topk_js,
         "tracked": tracked_js,
     }
+
+    # Add entropy if available: [n_layers, n_pos] -> [layer][position]
+    if "entropy" in data and data["entropy"] is not None:
+        entropy_js = [
+            [round(data["entropy"][li, pos].item(), 5) for pos in range(n_pos)]
+            for li in range(n_layers)
+        ]
+        result["entropy"] = entropy_js
+
+    return result
 
 
 def _is_js_format(data: Dict) -> bool:

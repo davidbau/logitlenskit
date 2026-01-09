@@ -7,7 +7,24 @@ between server and client is the primary bottleneck.
 """
 
 import torch
+import math
 from typing import List, Dict, Optional, Any
+
+
+def _compute_entropy(probs: torch.Tensor) -> torch.Tensor:
+    """
+    Compute entropy of probability distribution(s).
+
+    Args:
+        probs: Tensor of probabilities, last dim is the distribution
+
+    Returns:
+        Entropy value(s) in nats. Same shape as input minus last dim.
+    """
+    # Clamp to avoid log(0)
+    probs_clamped = probs.clamp(min=1e-10)
+    # H = -sum(p * log(p))
+    return -(probs_clamped * probs_clamped.log()).sum(dim=-1)
 
 
 # =============================================================================
@@ -192,9 +209,10 @@ def collect_logit_lens(
 
     # Run model, compute logit lens (computation happens server-side if remote=True)
     with model.trace(token_ids, remote=remote):
-        # Collect probabilities and top-k for each layer
+        # Collect probabilities, top-k, and entropy for each layer
         all_probs = []  # List of [n_pos, vocab_size] tensors
         all_topk = []   # List of [n_pos, k] tensors
+        all_entropy = []  # List of [n_pos] tensors
 
         for li in layers:
             # Get hidden state from layer output
@@ -213,12 +231,17 @@ def collect_logit_lens(
             all_probs.append(probs)
             all_topk.append(probs.topk(k, dim=-1).indices.to(torch.int32))  # [n_pos, k]
 
+            # Compute entropy of the probability distribution at each position
+            entropy = _compute_entropy(probs)  # [n_pos]
+            all_entropy.append(entropy)
+
         # Save individual layer results - stacking happens client-side
-        result = {"all_topk": all_topk, "all_probs": all_probs}.save()
+        result = {"all_topk": all_topk, "all_probs": all_probs, "all_entropy": all_entropy}.save()
 
     # Client-side: stack and compute tracked tokens
     topk = torch.stack(result["all_topk"], dim=0)  # [n_layers, n_pos, k]
     all_probs = result["all_probs"]  # List of [n_pos, vocab_size]
+    entropy = torch.stack(result["all_entropy"], dim=0)  # [n_layers, n_pos]
 
     # For each position: find unique tokens across all layers, extract trajectories
     tracked = []
@@ -249,5 +272,6 @@ def collect_logit_lens(
         "topk": topk,
         "tracked": tracked,
         "probs": probs_out,
+        "entropy": entropy,  # [n_layers, n_pos] - entropy at each layer/position
         "vocab": vocab,
     }

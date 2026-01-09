@@ -390,3 +390,343 @@ var widget1 = LogitLensWidget("#viz1", data);
 // Create identical copy with same pinned tokens, column widths, etc.
 var widget2 = LogitLensWidget("#viz2", data, widget1.getState());
 ```
+
+---
+
+## Extended API
+
+The widget provides an extended API for programmatic control beyond the basic initialization and state management. These methods allow you to build interactive applications that coordinate multiple widgets, respond to user actions, and dynamically update the visualization.
+
+### Event System
+
+The widget implements an event emitter pattern that lets you respond to user interactions and state changes. This is essential for building coordinated multi-widget dashboards or integrating the widget with other UI components.
+
+#### `on(event, callback)`
+
+```javascript
+widget.on('hover', function(pos) {
+    console.log('User is hovering over position:', pos);
+});
+```
+
+Registers a callback function to be called when the specified event fires. The callback receives event-specific data as its argument. Returns the widget instance for method chaining.
+
+**Available events:**
+
+| Event | Callback Argument | When Fired |
+|-------|-------------------|------------|
+| `hover` | position (number) | Mouse enters a different row |
+| `title` | title (string) | Title is changed via API or user edit |
+| `colorModes` | modes (array) | Color modes change |
+| `pinnedRows` | rows (array) | Pinned rows change |
+| `pinnedGroups` | groups (array) | Token groups change |
+| `trajectoryMetric` | metric (string) | Chart Y-axis metric changes |
+| `showHeatmap` | show (boolean) | Heatmap visibility changes |
+| `showChart` | show (boolean) | Chart visibility changes |
+
+**Why use events?** Events enable loose coupling between widgets and your application code. Instead of polling for changes or wrapping user interactions, you can simply subscribe to the events you care about. This is particularly useful for:
+
+- Synchronizing hover states across multiple widgets showing related data
+- Updating external UI elements when the user pins tokens or changes settings
+- Logging user interactions for analytics or debugging
+- Building "linked views" where selections in one widget filter another
+
+#### `off(event, callback)`
+
+```javascript
+var myListener = function(pos) { /* ... */ };
+widget.on('hover', myListener);
+// Later...
+widget.off('hover', myListener);
+```
+
+Removes a previously registered event listener. You must pass the exact same function reference that was used with `on()`. Returns the widget instance for method chaining.
+
+---
+
+### Visibility Controls
+
+The widget provides fine-grained control over which visual elements are displayed. These methods are useful for creating simplified views, responsive layouts, or progressive disclosure interfaces.
+
+#### `setShowHeatmap(show)` / `getShowHeatmap()`
+
+```javascript
+// Create a "clean" view without colored cells
+widget.setShowHeatmap(false);
+
+// Check current state
+if (widget.getShowHeatmap()) {
+    console.log('Heatmap coloring is enabled');
+}
+```
+
+Controls whether the probability heatmap coloring is applied to prediction cells. When disabled, cells display a neutral background color while still showing the predicted token text. This is useful when you want to focus attention on the token text itself rather than the probability gradients, or when creating screenshots for publication where colors might not reproduce well.
+
+The heatmap toggle only affects the cell background colors—the trajectory chart and all other functionality remains active. Users can still click cells to see popups and pin tokens for comparison.
+
+#### `setShowChart(show)` / `getShowChart()`
+
+```javascript
+// Hide the trajectory chart to save space
+widget.setShowChart(false);
+
+// Show it again
+widget.setShowChart(true);
+```
+
+Controls the visibility of the trajectory chart below the table. Hiding the chart can be useful when screen space is limited, when you're embedding the widget in a constrained layout, or when the chart isn't relevant for your specific analysis. The chart container is completely hidden (not just collapsed), so the table expands to fill the available space.
+
+Even when the chart is hidden, trajectory data is still computed and available. If you show the chart again, it will display whatever tokens and rows were pinned.
+
+---
+
+### Trajectory Metrics
+
+By default, the trajectory chart shows how token **probabilities** evolve across layers. For some analyses, it's more informative to see how the token's **rank** changes—whether the model is moving the token up or down in its preference ordering.
+
+#### `setTrajectoryMetric(metric)` / `getTrajectoryMetric()`
+
+```javascript
+// Switch to rank-based display
+widget.setTrajectoryMetric('rank');
+
+// Check current metric
+var metric = widget.getTrajectoryMetric(); // 'probability' or 'rank'
+```
+
+Changes what the Y-axis of the trajectory chart displays:
+
+- **`'probability'`** (default): Y-axis shows probability values from 0% to the maximum observed. Higher on the chart means higher probability.
+- **`'rank'`**: Y-axis shows the token's rank position (1 = top prediction). Rank 1 appears at the top of the chart, with higher rank numbers (worse predictions) appearing lower.
+
+**Why use rank mode?** Probability mode can be misleading when comparing tokens with very different probability scales. A token might be "climbing" from rank 50 to rank 2 while its raw probability stays small. Rank mode reveals this improvement clearly. It's also useful when comparing models with different calibration—their probability scales may differ, but rank provides a normalized comparison.
+
+When switching to rank mode, the chart automatically adjusts its Y-axis label and scale. The scale is determined by the tokens visible in the topk lists at each layer. If a token falls outside the topk at a particular layer, its rank may not be available for that point.
+
+---
+
+### Hover Synchronization
+
+For multi-widget dashboards comparing the same prompt across different models, you often want hover states to be synchronized—hovering over a position in one widget should highlight the corresponding position in all related widgets. The hover API enables this coordination.
+
+#### `hoverRow(pos)` / `clearHover()` / `getHoveredRow()`
+
+```javascript
+// Programmatically set hover position
+widget.hoverRow(3);  // Hover over position 3
+
+// Reset to default (last position)
+widget.clearHover();
+
+// Query current hover
+var pos = widget.getHoveredRow();  // Returns position number
+```
+
+These methods allow external control of the hover state. When you call `hoverRow()`, the widget updates its visual highlighting as if the user had moved their mouse to that row. The trajectory chart preview updates accordingly.
+
+**Building synchronized widgets:**
+
+```javascript
+var w1 = LogitLensWidget("#viz1", llamaData);
+var w2 = LogitLensWidget("#viz2", gptData);
+
+// When user hovers in widget 1, update widget 2
+w1.on('hover', function(pos) {
+    w2.hoverRow(pos);
+});
+
+// And vice versa
+w2.on('hover', function(pos) {
+    w1.hoverRow(pos);
+});
+```
+
+This pattern creates a "linked hover" experience where moving the mouse in either widget highlights the corresponding position in both. Combined with `linkColumnsTo()` for sizing, this provides a fully synchronized comparison view.
+
+---
+
+### Title Management
+
+The widget title appears above the table and can be edited by clicking on it. The title API provides programmatic access to this feature.
+
+#### `setTitle(title)` / `getTitle()`
+
+```javascript
+// Set a descriptive title
+widget.setTitle('GPT-4: "The capital of France is"');
+
+// Read current title
+var currentTitle = widget.getTitle();
+```
+
+The title is displayed prominently at the top of the widget and helps users understand what they're looking at. When you have multiple widgets on a page, distinct titles are essential for orientation.
+
+Title changes fire the `title` event, so you can track when users edit titles or update external UI elements accordingly.
+
+---
+
+### Color Mode API
+
+Color modes control how prediction cells are shaded. The widget can highlight cells based on the probability of the top prediction, a specific token, entropy (uncertainty), or no coloring at all. Multiple color modes can be active simultaneously, with the highest-probability mode "winning" for each cell.
+
+#### `setColorModes(modes)` / `getColorModes()`
+
+```javascript
+// Show only top-prediction coloring
+widget.setColorModes(['top']);
+
+// Color by a specific token
+widget.setColorModes(['Paris', ' Paris']);
+
+// Multiple modes: cells colored by whichever has higher probability
+widget.setColorModes(['top', 'Paris']);
+
+// Show entropy (uncertainty) coloring
+widget.setColorModes(['entropy']);
+
+// No coloring
+widget.setColorModes([]);
+```
+
+The modes array can contain:
+- `'top'`: Color by top-1 prediction probability (default purple gradient)
+- `'entropy'`: Color by entropy/uncertainty (purple gradient, requires entropy data)
+- Token strings: Color by that specific token's probability
+- Empty array: No cell coloring
+
+When multiple modes are specified, each cell is colored according to whichever mode has the highest value at that cell. This creates a "competition" visualization showing where different tokens dominate.
+
+#### `addColorMode(mode)` / `removeColorMode(mode)`
+
+```javascript
+// Add entropy coloring alongside existing modes
+widget.addColorMode('entropy');
+
+// Remove a specific mode
+widget.removeColorMode('top');
+```
+
+Convenience methods for modifying the color modes without replacing the entire array. Useful when building UI controls that toggle individual modes on and off.
+
+**Entropy coloring:** The `'entropy'` mode is only available when the data includes entropy values (see Data Format). Entropy indicates the model's uncertainty at each position and layer—high entropy means the model is torn between many options, while low entropy means it's confident in its prediction. The entropy color mode uses a purple gradient where darker colors indicate higher uncertainty.
+
+---
+
+### Row and Group Manipulation
+
+Pinned rows and token groups are core to the widget's analytical capability. The manipulation API provides programmatic control over what's being compared.
+
+#### `getPinnedRows()` / `setPinnedRows(rows)` / `togglePinnedRow(pos)`
+
+```javascript
+// Get currently pinned rows
+var rows = widget.getPinnedRows();
+// Returns: [{pos: 4, line: 'solid'}, {pos: 2, line: 'dashed'}]
+
+// Set specific rows to pin
+widget.setPinnedRows([
+    { pos: 0, line: 'solid' },
+    { pos: 3, line: 'dashed' }
+]);
+
+// Toggle a single row
+widget.togglePinnedRow(2);  // Pins if unpinned, unpins if pinned
+```
+
+Pinned rows determine which input positions have their trajectories shown in the chart. Each pinned row gets a distinct line style (solid, dashed, or dotted) to distinguish them visually. The `line` property in each row object controls this styling.
+
+**Smart row visibility:** When the widget has a `maxRows` constraint (limiting how many rows are visible), pinned rows are guaranteed to remain visible. The widget uses a smart algorithm that prioritizes showing pinned rows, then fills remaining space with the most recent unpinned rows. This ensures that rows you've explicitly marked as important never get hidden.
+
+#### `getPinnedGroups()` / `setPinnedGroups(groups)`
+
+```javascript
+// Get currently pinned token groups
+var groups = widget.getPinnedGroups();
+// Returns: [{tokens: ['Paris', ' Paris'], color: '#ff5722'}]
+
+// Set specific groups
+widget.setPinnedGroups([
+    { tokens: ['Paris', ' Paris'], color: '#4caf50' },
+    { tokens: ['London', ' London'], color: '#2196f3' }
+]);
+```
+
+Token groups allow comparing multiple tokens' trajectories. Each group has a color and a list of tokens. The trajectory shown for a group is the sum of probabilities for all tokens in that group—useful for aggregating variants like `'Paris'` and `' Paris'` (with leading space).
+
+#### `pinToken(token, options)` / `unpinToken(token)`
+
+```javascript
+// Pin a token with a specific color
+widget.pinToken('Paris', { color: '#ff5722' });
+
+// Pin with default color
+widget.pinToken('London');
+
+// Remove a token from all groups
+widget.unpinToken('Paris');
+```
+
+Higher-level methods for working with individual tokens. `pinToken()` creates a new group containing just that token (or adds to an existing group if using modifier keys). `unpinToken()` removes the token from whatever group it's in.
+
+---
+
+### Data Capability Detection
+
+Different datasets may include different types of information. These methods let you query what capabilities are available, so you can conditionally enable UI features or avoid errors from missing data.
+
+#### `hasEntropyData()`
+
+```javascript
+if (widget.hasEntropyData()) {
+    // Safe to use entropy color mode
+    widget.addColorMode('entropy');
+} else {
+    console.log('This dataset does not include entropy values');
+}
+```
+
+Returns `true` if the data includes entropy values for each cell. Entropy is calculated during data collection by the Python library and represents the uncertainty of the probability distribution at each layer and position. Not all datasets include this information.
+
+#### `hasRankData()`
+
+```javascript
+if (widget.hasRankData()) {
+    // Can show rank-based trajectories
+    widget.setTrajectoryMetric('rank');
+}
+```
+
+Returns `true` if the data includes explicit rank information for tracked tokens. When rank data isn't available, the widget can still compute approximate ranks from the topk lists, but this may be less accurate for tokens that frequently fall outside the topk.
+
+#### `isTokenTracked(token, pos)`
+
+```javascript
+if (widget.isTokenTracked('Paris', 4)) {
+    console.log('"Paris" has trajectory data at position 4');
+} else {
+    console.log('"Paris" is not in the topk at position 4');
+}
+```
+
+Checks whether a specific token has trajectory data at a given position. Trajectory data is only available for tokens that appear in the topk lists at that position. This method returns `true` if the token can be meaningfully visualized at that position, `false` otherwise.
+
+This is useful for building UI that suggests or validates token selections—you can check whether pinning a token will actually show useful data before doing so.
+
+---
+
+### Method Chaining
+
+All setter methods return the widget instance, enabling fluent method chaining:
+
+```javascript
+widget
+    .setTitle('Analysis of GPT-4')
+    .setShowChart(true)
+    .setShowHeatmap(true)
+    .setColorModes(['top', 'entropy'])
+    .setTrajectoryMetric('probability')
+    .on('hover', handleHover)
+    .on('title', handleTitleChange);
+```
+
+This pattern is convenient for configuration and setup code, reducing the number of separate statements needed.

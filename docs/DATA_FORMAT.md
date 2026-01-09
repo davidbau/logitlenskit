@@ -177,6 +177,13 @@ V2 is organized around the insight that trajectories are the expensive part—an
     // Layer 1
     [[" the", " a"], [" brown", " quick"], ...],
     // ... more layers
+  ],
+  "entropy": [
+    // Layer 0: [entropy_pos0, entropy_pos1, ...]
+    [2.5, 2.3, 2.1, 1.9, 1.5],
+    // Layer 1
+    [2.4, 2.2, 2.0, 1.8, 1.3],
+    // ... more layers (optional field)
   ]
 }
 ```
@@ -193,6 +200,7 @@ V2 is organized around the insight that trajectories are the expensive part—an
 | `input` | string[] | Input token strings |
 | `tracked` | object[] | Per-position dict: token → trajectory |
 | `topk` | string[][][] | `[layer][position]` → top-k token strings |
+| `entropy` | number[][] | (Optional) `[layer][position]` → entropy values in nats |
 
 #### Key V2 Characteristics
 
@@ -200,6 +208,23 @@ V2 is organized around the insight that trajectories are the expensive part—an
 2. **Token strings in topk**: No indices, just decoded strings for display
 3. **Metadata included**: Model name and timestamp for provenance
 4. **Input not tokens**: Field renamed from `tokens` to `input` for clarity
+5. **Optional entropy**: When present, enables entropy-based visualization coloring
+
+#### Entropy Data
+
+The optional `entropy` field provides a measure of the model's uncertainty at each layer and position. Entropy is calculated as the Shannon entropy of the probability distribution over the vocabulary:
+
+```
+H = -Σ p(x) log p(x)
+```
+
+Values are in **nats** (natural log base). Higher entropy indicates more uncertainty—the model is spread across many possible tokens. Lower entropy indicates confidence—the model strongly prefers one or a few tokens.
+
+Entropy decreases across layers as the model commits to a prediction. Early layers often show high entropy (exploring possibilities), while final layers show low entropy (confident decisions). This pattern is a key insight from logit lens analysis.
+
+When entropy data is present, the JavaScript widget enables:
+- **Entropy color mode**: Cells colored by uncertainty (purple gradient)
+- **`hasEntropyData()` API**: Detect whether entropy visualization is available
 
 ### V1 Format (Legacy)
 

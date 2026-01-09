@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>API Features Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .widget-container { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>API Features Test</h1>
+
+    <!-- Widget for testing new API features -->
+    <div id="widget-api-test" class="widget-container" style="background: white;"></div>
+
+    <!-- Widget with entropy data for testing entropy color mode -->
+    <div id="widget-entropy-test" class="widget-container" style="background: white;"></div>
+
+    <script src="sample-data.js"></script>
+    <script src="logit-lens-widget.min.js"></script>
+    <script>
+    // Create test data with entropy
+    var DATA_WITH_ENTROPY = {
+        meta: { version: 2, model: "test-model" },
+        input: ["The", " capital", " of", " France", " is"],
+        layers: [0, 1, 2, 3, 4],
+        topk: [
+            [["a", "b"], ["x", "y"], ["m", "n"], ["p", "q"], ["Paris", " Paris"]],
+            [["a", "b"], ["x", "y"], ["m", "n"], ["p", "q"], ["Paris", " Paris"]],
+            [["a", "b"], ["x", "y"], ["m", "n"], ["p", "q"], ["Paris", " Paris"]],
+            [["a", "b"], ["x", "y"], ["m", "n"], ["p", "q"], ["Paris", " Paris"]],
+            [["a", "b"], ["x", "y"], ["m", "n"], ["p", "q"], ["Paris", " Paris"]]
+        ],
+        tracked: [
+            { "a": [0.3, 0.2, 0.1, 0.05, 0.01], "b": [0.2, 0.3, 0.4, 0.5, 0.6] },
+            { "x": [0.4, 0.3, 0.2, 0.1, 0.05], "y": [0.1, 0.2, 0.3, 0.4, 0.5] },
+            { "m": [0.5, 0.4, 0.3, 0.2, 0.1], "n": [0.05, 0.1, 0.2, 0.3, 0.4] },
+            { "p": [0.3, 0.3, 0.3, 0.3, 0.3], "q": [0.2, 0.2, 0.2, 0.2, 0.2] },
+            { "Paris": [0.01, 0.05, 0.2, 0.5, 0.9], " Paris": [0.005, 0.03, 0.1, 0.3, 0.08] }
+        ],
+        entropy: [
+            [2.5, 2.3, 2.1, 1.9, 1.5],  // layer 0
+            [2.4, 2.2, 2.0, 1.8, 1.3],  // layer 1
+            [2.2, 2.0, 1.8, 1.5, 1.0],  // layer 2
+            [1.8, 1.6, 1.4, 1.2, 0.6],  // layer 3
+            [1.2, 1.0, 0.8, 0.5, 0.2]   // layer 4
+        ]
+    };
+
+    // Store widget references globally for test access
+    window.testWidgets = {};
+
+    (function() {
+        // Widget 1: Standard API test widget
+        function initApiWidget() {
+            var container = document.getElementById("widget-api-test");
+            if (container) {
+                window.testWidgets.apiWidget = LogitLensWidget("#widget-api-test", SAMPLE_DATA_1, {
+                    title: "API Test Widget"
+                });
+            } else {
+                setTimeout(initApiWidget, 10);
+            }
+        }
+        initApiWidget();
+
+        // Widget 2: Widget with entropy data
+        function initEntropyWidget() {
+            var container = document.getElementById("widget-entropy-test");
+            if (container) {
+                window.testWidgets.entropyWidget = LogitLensWidget("#widget-entropy-test", DATA_WITH_ENTROPY, {
+                    title: "Entropy Test Widget"
+                });
+            } else {
+                setTimeout(initEntropyWidget, 10);
+            }
+        }
+        initEntropyWidget();
+    })();
+    </script>
+</body>
+</html>
