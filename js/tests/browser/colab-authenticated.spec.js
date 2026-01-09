@@ -39,26 +39,91 @@ test.describe('Authenticated Colab Tests', () => {
     // These tests are slow - NDIF execution takes time
     test.setTimeout(300000);  // 5 minutes
 
+    // Custom error class for auth failures to enable special handling
+    class AuthExpiredError extends Error {
+        constructor(message) {
+            super(message);
+            this.name = 'AuthExpiredError';
+        }
+    }
+
     // Helper to check if Google sign-in is required (auth expired)
+    // Returns true if auth is valid, throws AuthExpiredError if expired
     const checkForSignIn = async (page) => {
         const url = page.url();
-        if (url.includes('accounts.google.com') || url.includes('signin')) {
-            console.log('\n❌ Google sign-in required - auth state has expired');
-            console.log('Please re-run: npm run test:colab:setup');
-            throw new Error('Google authentication expired. Re-run: npm run test:colab:setup');
+
+        // Check 1: URL redirected to Google sign-in
+        if (url.includes('accounts.google.com/v3/signin') ||
+            url.includes('accounts.google.com/ServiceLogin') ||
+            url.includes('accounts.google.com/o/oauth2')) {
+            console.log('\n' + '═'.repeat(60));
+            console.log('❌ AUTHENTICATION EXPIRED');
+            console.log('═'.repeat(60));
+            console.log('\nGoogle redirected to sign-in page.');
+            console.log('Your saved authentication state has expired.\n');
+            console.log('To fix this, run:\n');
+            console.log('  npm run test:colab:setup\n');
+            console.log('This will open a browser where you can sign in again.');
+            console.log('═'.repeat(60) + '\n');
+            throw new AuthExpiredError('Google authentication expired. Run: npm run test:colab:setup');
         }
-        // Also check for sign-in button/prompt on the page
+
+        // Check 2: Sign-in button visible on page (not logged in)
         try {
-            const signInBtn = page.locator('text=Sign in').first();
-            if (await signInBtn.isVisible({ timeout: 500 }).catch(() => false)) {
-                console.log('\n❌ Sign-in prompt detected - auth state has expired');
-                console.log('Please re-run: npm run test:colab:setup');
-                throw new Error('Google authentication expired. Re-run: npm run test:colab:setup');
+            // Look for various sign-in indicators
+            const signInSelectors = [
+                'a:has-text("Sign in")',
+                'button:has-text("Sign in")',
+                '[data-action="sign in"]',
+                '.sign-in-button',
+            ];
+            for (const selector of signInSelectors) {
+                const btn = page.locator(selector).first();
+                if (await btn.isVisible({ timeout: 200 }).catch(() => false)) {
+                    console.log('\n' + '═'.repeat(60));
+                    console.log('❌ AUTHENTICATION EXPIRED');
+                    console.log('═'.repeat(60));
+                    console.log('\nSign-in prompt detected on page.');
+                    console.log('Your saved authentication state has expired.\n');
+                    console.log('To fix this, run:\n');
+                    console.log('  npm run test:colab:setup\n');
+                    console.log('═'.repeat(60) + '\n');
+                    throw new AuthExpiredError('Google authentication expired. Run: npm run test:colab:setup');
+                }
             }
         } catch (e) {
-            if (e.message.includes('authentication expired')) throw e;
+            if (e instanceof AuthExpiredError) throw e;
+            // Ignore other errors (element not found, etc.)
+        }
+
+        // Check 3: Page content indicates not logged in
+        try {
+            const pageText = await page.locator('body').textContent().catch(() => '');
+            const authFailurePatterns = [
+                /sign in to continue/i,
+                /please sign in/i,
+                /log in to your google account/i,
+                /choose an account/i,
+            ];
+            for (const pattern of authFailurePatterns) {
+                if (pattern.test(pageText)) {
+                    console.log('\n' + '═'.repeat(60));
+                    console.log('❌ AUTHENTICATION EXPIRED');
+                    console.log('═'.repeat(60));
+                    console.log(`\nDetected: "${pattern.source}"`);
+                    console.log('Your saved authentication state has expired.\n');
+                    console.log('To fix this, run:\n');
+                    console.log('  npm run test:colab:setup\n');
+                    console.log('═'.repeat(60) + '\n');
+                    throw new AuthExpiredError('Google authentication expired. Run: npm run test:colab:setup');
+                }
+            }
+        } catch (e) {
+            if (e instanceof AuthExpiredError) throw e;
             // Ignore other errors
         }
+
+        return true;  // Auth appears valid
     };
 
     // Helper to check for NDIF errors in page content
@@ -199,6 +264,9 @@ test.describe('Authenticated Colab Tests', () => {
         console.log('Waiting for widgets to render (polling every 2s)...');
         let widgetFrameCount = 0;
         for (let attempt = 0; attempt < 30; attempt++) {
+            // Check for auth expiration early - fail fast instead of timing out
+            await checkForSignIn(page);
+
             // Also check for grant access dialog during polling
             await handleGrantAccessDialog();
 
@@ -652,6 +720,9 @@ test.describe('Authenticated Colab Tests', () => {
         let lastProgress = '';
 
         for (let attempt = 0; attempt < 90; attempt++) {  // Up to 15 minutes
+            // Check for auth expiration early - fail fast instead of timing out
+            await checkForSignIn(page);
+
             // Handle grant access dialog during polling
             await handleGrantAccessDialog();
 
