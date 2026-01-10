@@ -345,7 +345,7 @@ test.describe('Local Jupyter NDIF Tests', () => {
         console.log(`  Hovered cell background: ${cellBg}`);
         console.log('  ✓ Hover interaction works');
 
-        // Test 6: Verify click shows popup
+        // Test 6: Verify click shows popup with top-k predictions
         console.log('\nWidget Test 6: Click popup...');
         await targetCell.click();
         await page.waitForTimeout(500);  // Wait for popup
@@ -354,10 +354,32 @@ test.describe('Local Jupyter NDIF Tests', () => {
         const popupVisible = await popup.count() > 0;
 
         if (popupVisible) {
-            const popupText = await popup.textContent();
-            console.log(`  Popup content preview: "${popupText.substring(0, 50).trim()}..."`);
-            expect(popupText.length).toBeGreaterThan(0);
-            console.log('  ✓ Popup displays on click');
+            // Verify popup has top-k prediction items
+            const topkItems = popup.locator('.topk-item');
+            const topkCount = await topkItems.count();
+            console.log(`  Found ${topkCount} top-k prediction items`);
+            expect(topkCount).toBeGreaterThan(0);
+
+            // Verify each item has token and probability
+            for (let i = 0; i < Math.min(topkCount, 3); i++) {
+                const item = topkItems.nth(i);
+                const token = await item.locator('.topk-token').textContent();
+                const prob = await item.locator('.topk-prob').textContent();
+                console.log(`    ${i + 1}. "${token.trim()}" - ${prob.trim()}`);
+
+                // Verify probability format (should be like "12.3%")
+                expect(prob.trim()).toMatch(/^\d+\.?\d*%$/);
+            }
+            console.log('  ✓ Popup shows top-k predictions with probabilities');
+
+            // Verify popup header shows layer and position info
+            const popupHeader = popup.locator('.popup-header');
+            if (await popupHeader.count() > 0) {
+                const headerText = await popupHeader.textContent();
+                expect(headerText).toContain('Layer');
+                expect(headerText).toContain('Position');
+                console.log('  ✓ Popup header shows layer and position');
+            }
 
             // Close popup by clicking outside (overlay intercepts close button)
             await page.mouse.click(10, 10);
