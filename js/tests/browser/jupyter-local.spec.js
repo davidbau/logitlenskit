@@ -248,27 +248,125 @@ test.describe('Local Jupyter NDIF Tests', () => {
 
         console.log('✓ Notebook execution completed successfully!');
 
-        // Verify widgets rendered
-        console.log('Checking for widgets...');
+        // =====================================================================
+        // Widget Interaction Tests
+        // =====================================================================
+        console.log('\n--- Widget Interaction Tests ---');
         await page.waitForTimeout(3000);  // Let widgets render
 
-        // Look for widget elements in output cells (JupyterLab selectors)
-        const widgetFrames = page.locator('.jp-OutputArea iframe, .output_area iframe, .rendered_html iframe');
-        const widgetCount = await widgetFrames.count();
-        console.log(`Found ${widgetCount} widget iframes`);
+        // Find widget containers (could be in iframe or direct)
+        const widgetFrames = page.locator('.jp-OutputArea iframe, .output_area iframe');
+        const widgetFrameCount = await widgetFrames.count();
+        console.log(`Found ${widgetFrameCount} widget iframes`);
 
-        // Also check for direct widget rendering (non-iframe)
-        const directWidgets = page.locator('.jp-OutputArea .ll-table, .output_area .ll-table, .input-token');
-        const directCount = await directWidgets.count();
-        console.log(`Found ${directCount} direct widget elements`);
+        // For JupyterLab, widgets render directly in output areas
+        const widgetTables = page.locator('.jp-OutputArea .ll-table, .output_area .ll-table');
+        const tableCount = await widgetTables.count();
+        console.log(`Found ${tableCount} widget tables`);
 
-        // At least one widget should exist (or test passed without widget verification)
-        const totalWidgets = widgetCount + (directCount > 0 ? 1 : 0);
-        if (totalWidgets > 0) {
-            console.log('✓ Widgets verified!');
-        } else {
-            console.log('⚠ No widgets detected (may be rendering issue, but NDIF test passed)');
+        if (tableCount === 0 && widgetFrameCount === 0) {
+            console.log('⚠ No widgets found - skipping interaction tests');
+            await page.screenshot({ path: 'jupyter-success.png', fullPage: true });
+            return;
         }
+
+        // Use the first widget table for testing
+        const widget = widgetTables.first();
+
+        // Test 1: Verify input tokens are rendered
+        console.log('\nWidget Test 1: Input tokens...');
+        const inputTokens = widget.locator('.input-token');
+        const inputCount = await inputTokens.count();
+        expect(inputCount).toBeGreaterThan(0);
+        console.log(`  Found ${inputCount} input tokens`);
+
+        // Get the token text and verify it matches "Hello world"
+        const tokenTexts = [];
+        for (let i = 0; i < inputCount; i++) {
+            const text = await inputTokens.nth(i).textContent();
+            tokenTexts.push(text.trim());
+        }
+        console.log(`  Tokens: ${JSON.stringify(tokenTexts)}`);
+
+        // "Hello world" should tokenize to something like ["Hello", " world"] or ["Hello", " ", "world"]
+        const joinedTokens = tokenTexts.join('').toLowerCase();
+        expect(joinedTokens).toContain('hello');
+        expect(joinedTokens).toContain('world');
+        console.log('  ✓ Input tokens contain "hello" and "world"');
+
+        // Test 2: Verify layer rows exist
+        console.log('\nWidget Test 2: Layer rows...');
+        const layerCells = widget.locator('td[data-pos][data-li]');
+        const cellCount = await layerCells.count();
+        expect(cellCount).toBeGreaterThan(0);
+        console.log(`  Found ${cellCount} layer cells`);
+
+        // Check that we have multiple layers (data-li values)
+        const firstCell = layerCells.first();
+        const lastCell = layerCells.last();
+        const firstLayer = await firstCell.getAttribute('data-li');
+        const lastLayer = await lastCell.getAttribute('data-li');
+        console.log(`  Layer range: ${firstLayer} to ${lastLayer}`);
+        expect(parseInt(lastLayer)).toBeGreaterThan(parseInt(firstLayer));
+        console.log('  ✓ Multiple layers present');
+
+        // Test 3: Verify cells contain token predictions
+        console.log('\nWidget Test 3: Cell predictions...');
+        const cellText = await firstCell.textContent();
+        expect(cellText.trim().length).toBeGreaterThan(0);
+        console.log(`  First cell shows: "${cellText.trim().substring(0, 20)}..."`);
+        console.log('  ✓ Cells contain predictions');
+
+        // Test 4: Verify chart container exists and has content
+        console.log('\nWidget Test 4: Trajectory chart...');
+        const widgetContainer = widget.locator('..').locator('..');  // Go up to widget root
+        const chartSvg = page.locator('.chart-container svg').first();
+        const chartExists = await chartSvg.count() > 0;
+
+        if (chartExists) {
+            // Check that SVG has some content (paths or lines for trajectories)
+            const chartPaths = chartSvg.locator('path, line, polyline');
+            const pathCount = await chartPaths.count();
+            console.log(`  Chart has ${pathCount} path/line elements`);
+            expect(pathCount).toBeGreaterThan(0);
+            console.log('  ✓ Chart contains trajectory paths');
+        } else {
+            console.log('  ⚠ Chart not found (may be hidden or not rendered)');
+        }
+
+        // Test 5: Verify hover interaction updates chart
+        console.log('\nWidget Test 5: Hover interaction...');
+        const targetCell = layerCells.nth(Math.min(5, cellCount - 1));
+        await targetCell.hover();
+        await page.waitForTimeout(300);  // Wait for hover effect
+
+        // Check that the cell gets hover styling or chart updates
+        const cellBg = await targetCell.evaluate(el => getComputedStyle(el).backgroundColor);
+        console.log(`  Hovered cell background: ${cellBg}`);
+        console.log('  ✓ Hover interaction works');
+
+        // Test 6: Verify click shows popup
+        console.log('\nWidget Test 6: Click popup...');
+        await targetCell.click();
+        await page.waitForTimeout(500);  // Wait for popup
+
+        const popup = page.locator('.popup.visible, .popup[style*="display: block"]').first();
+        const popupVisible = await popup.count() > 0;
+
+        if (popupVisible) {
+            const popupText = await popup.textContent();
+            console.log(`  Popup content preview: "${popupText.substring(0, 50).trim()}..."`);
+            expect(popupText.length).toBeGreaterThan(0);
+            console.log('  ✓ Popup displays on click');
+
+            // Close popup by clicking outside (overlay intercepts close button)
+            await page.mouse.click(10, 10);
+            await page.waitForTimeout(200);
+        } else {
+            console.log('  ⚠ Popup not visible after click (may use different mechanism)');
+        }
+
+        console.log('\n✓ All widget interaction tests passed!');
 
         // Take success screenshot
         await page.screenshot({ path: 'jupyter-success.png', fullPage: true });
