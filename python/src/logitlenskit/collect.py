@@ -157,6 +157,7 @@ def collect_logit_lens(
     layers: Optional[List[int]] = None,
     model_type: Optional[str] = None,
     remote: bool = True,
+    max_loc: Optional[int] = None,
 ) -> Dict:
     """
     Collect logit lens data: top-k predictions and probability trajectories.
@@ -171,11 +172,14 @@ def collect_logit_lens(
         layers: Specific layer indices to analyze (default: all layers)
         model_type: Model architecture type (auto-detected if not provided)
         remote: Use NDIF remote execution (default: True)
+        max_loc: Maximum number of token positions to return (default: all).
+            If set and prompt has more tokens, only the last max_loc positions
+            are returned. This reduces memory/bandwidth for long prompts.
 
     Returns:
         Dict with:
             model: Model name/path
-            input: List of input token strings
+            input: List of input token strings (last max_loc if truncated)
             layers: List of layer indices analyzed
             topk: Tensor[int32] of shape [n_layers, n_positions, k]
             tracked: List of Tensor[int32] per position (unique token indices)
@@ -200,7 +204,18 @@ def collect_logit_lens(
 
     # Tokenize once, client-side
     token_ids = model.tokenizer.encode(prompt)
-    n_pos = len(token_ids)
+    n_pos_total = len(token_ids)
+
+    # Determine how many positions to return
+    if max_loc is not None and n_pos_total > max_loc:
+        # We'll slice to keep only the last max_loc positions
+        loc_start = n_pos_total - max_loc
+        n_pos = max_loc
+        token_ids_out = token_ids[loc_start:]
+    else:
+        loc_start = 0
+        n_pos = n_pos_total
+        token_ids_out = token_ids
 
     # Default: all layers
     if layers is None:
@@ -227,6 +242,12 @@ def collect_logit_lens(
             # remote mode has [n_pos, vocab]. Squeeze batch if present.
             if logits.dim() == 3:
                 logits = logits.squeeze(0)  # Remove batch dim
+
+            # Slice to keep only the last max_loc positions (if set)
+            # This happens server-side, reducing bandwidth for long prompts
+            if loc_start > 0:
+                logits = logits[loc_start:]
+
             probs = torch.softmax(logits, dim=-1)  # [n_pos, vocab_size]
             all_probs.append(probs)
             all_topk.append(probs.topk(k, dim=-1).indices.to(torch.int32))  # [n_pos, k]
@@ -271,7 +292,7 @@ def collect_logit_lens(
 
     return {
         "model": model_name,
-        "input": [model.tokenizer.decode([t]) for t in token_ids],
+        "input": [model.tokenizer.decode([t]) for t in token_ids_out],
         "layers": layers,
         "topk": topk,
         "tracked": tracked,

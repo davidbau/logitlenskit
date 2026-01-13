@@ -1823,50 +1823,12 @@ var LogitLensWidget = (function() {
                 var popup = dom.popup();
                 var rect = cell.getBoundingClientRect();
                 var containerRect = dom.widget().getBoundingClientRect();
-
-                // Intelligent popup positioning:
-                // 1. Default: position to the right of the cell
-                // 2. If popup would overflow right edge, position to the left of the cell
-                // 3. If popup would overflow bottom, position above the cell
-
-                // Estimate popup size (approximate - popup isn't rendered yet)
-                var popupWidth = 180;   // Approximate popup width
-                var popupHeight = 200;  // Approximate popup height
-
-                // Calculate available space
                 var viewportWidth = window.innerWidth;
-                var viewportHeight = window.innerHeight;
+                var gap = 5;
 
                 // Default position (to the right of cell)
-                var left = rect.left - containerRect.left + rect.width + 5;
-                var top = rect.top - containerRect.top;
-
-                // Check right edge collision
-                var absoluteRight = containerRect.left + left + popupWidth;
-                if (absoluteRight > viewportWidth) {
-                    // Position to the left of the cell instead
-                    left = rect.left - containerRect.left - popupWidth - 5;
-                    // Ensure it doesn't go off the left edge
-                    if (left < -containerRect.left) {
-                        left = Math.max(0, rect.left - containerRect.left - popupWidth - 5);
-                    }
-                }
-
-                // Check bottom edge collision
-                var absoluteBottom = rect.top + popupHeight;
-                if (absoluteBottom > viewportHeight) {
-                    // Position above the cell or adjust upward
-                    var spaceAbove = rect.top;
-                    var spaceBelow = viewportHeight - rect.bottom;
-                    if (spaceAbove > spaceBelow) {
-                        // More space above - position above the cell
-                        top = rect.top - containerRect.top - popupHeight;
-                    }
-                    // Otherwise keep original top position (will scroll if needed)
-                }
-
-                popup.style.left = left + "px";
-                popup.style.top = top + "px";
+                popup.style.left = (rect.left - containerRect.left + rect.width + gap) + "px";
+                popup.style.top = (rect.top - containerRect.top) + "px";
 
                 dom.popupLayer().textContent = widgetData.layers[li];
                 dom.popupPos().innerHTML = pos + "<br>Input <code>" + escapeHtml(visualizeSpaces(widgetData.tokens[pos])) + "</code>";
@@ -1925,6 +1887,11 @@ var LogitLensWidget = (function() {
                 });
 
                 popup.classList.add("visible");
+                // Reposition if popup overflows right edge of viewport
+                var popupRect = popup.getBoundingClientRect();
+                if (popupRect.right > viewportWidth && rect.left - gap - popupRect.width >= 0) {
+                    popup.style.left = (rect.left - containerRect.left - popupRect.width - gap) + "px";
+                }
                 showOverlay(closePopup);
                 var chartInnerWidth = updateChartDimensions();
                 // Always show hover trajectory even if token is pinned
